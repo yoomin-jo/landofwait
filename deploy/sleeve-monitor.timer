@@ -1,0 +1,9 @@
+[Unit]
+Description=슬리브간 60% 밴드 모니터링 타이머 (매일 16:10 KST, 내부에서 월말 여부 체크)
+
+[Timer]
+OnCalendar=*-*-* 16:10:00 Asia/Seoul
+Persistent=true
+
+[Install]
+WantedBy=timers.target

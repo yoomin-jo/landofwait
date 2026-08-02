@@ -1,0 +1,16 @@
+[Unit]
+Description=자산배분 하이브리드 봇 — Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/hybrid-portfolio
+ExecStart=/home/pi/hybrid-portfolio/venv/bin/python telegram_bot.py
+EnvironmentFile=/home/pi/hybrid-portfolio/.env
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

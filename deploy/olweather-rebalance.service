@@ -1,0 +1,14 @@
+[Unit]
+Description=올웨더 ETF 슬리브 월간 리밸런싱 + 정산알림
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/hybrid-portfolio
+ExecStart=/home/pi/hybrid-portfolio/venv/bin/python live_pipeline_olweather.py
+EnvironmentFile=/home/pi/hybrid-portfolio/.env
+
+[Install]
+WantedBy=multi-user.target

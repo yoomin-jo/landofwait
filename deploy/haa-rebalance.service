@@ -1,0 +1,14 @@
+[Unit]
+Description=HAA Sleeve Monthly Rebalancing
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/hybrid-portfolio
+ExecStart=/home/pi/hybrid-portfolio/venv/bin/python live_pipeline_haa.py
+EnvironmentFile=/home/pi/hybrid-portfolio/.env
+
+[Install]
+WantedBy=multi-user.target

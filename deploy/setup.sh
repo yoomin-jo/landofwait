@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_DIR="/home/pi/hybrid-portfolio"
+DEPLOY_DIR="$PROJECT_DIR/deploy"
+
+cd "$PROJECT_DIR"
+
+python3 -m venv venv
+venv/bin/pip install --upgrade pip
+venv/bin/pip install -r requirements.txt
+
+sudo cp "$DEPLOY_DIR/haa-rebalance.service" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/haa-rebalance.timer" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/olweather-rebalance.service" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/olweather-rebalance.timer" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/sleeve-monitor.service" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/sleeve-monitor.timer" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/hybrid-bot.service" /etc/systemd/system/
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now haa-rebalance.timer
+sudo systemctl enable --now olweather-rebalance.timer
+sudo systemctl enable --now sleeve-monitor.timer
+sudo systemctl enable --now hybrid-bot.service
+
+echo "설치 완료"
+echo "  타이머 상태: systemctl status haa-rebalance.timer olweather-rebalance.timer sleeve-monitor.timer"
+echo "  봇 상태:     systemctl status hybrid-bot.service"

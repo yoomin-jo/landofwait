@@ -1,0 +1,14 @@
+[Unit]
+Description=슬리브간 60% 밴드 모니터링 (알림 전용, 매매 없음)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/hybrid-portfolio
+ExecStart=/home/pi/hybrid-portfolio/venv/bin/python sleeve_monitor.py
+EnvironmentFile=/home/pi/hybrid-portfolio/.env
+
+[Install]
+WantedBy=multi-user.target

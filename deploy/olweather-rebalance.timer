@@ -1,0 +1,9 @@
+[Unit]
+Description=올웨더 ETF 리밸런싱 타이머 (평일 16:00 KST, 내부에서 월말/정산일 체크 후 필요시만 동작)
+
+[Timer]
+OnCalendar=Mon..Fri 16:00 Asia/Seoul
+Persistent=true
+
+[Install]
+WantedBy=timers.target
