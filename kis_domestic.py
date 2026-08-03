@@ -1,12 +1,11 @@
 """KIS(한국투자증권) 국내주식 REST API 래퍼. kis_overseas.py와 동일한 KisToken/tr_id 패턴,
 /uapi/domestic-stock/* 엔드포인트만 다름. quant-platform의 brokers/kis.py를 TR코드/페이로드
 형태 레퍼런스로 참고했으나 코드 자체는 새로 작성함 (그 프로젝트는 미사용/미검증 코드라 신뢰 X).
-모의투자 없음 — 무조건 실전(prod) 계좌. ISA 계좌는 해외계좌와 별도 앱키 사용.
+모의투자 없음 — 무조건 실전(prod) 계좌. 계좌마다 별도 앱키 사용, get_access_token(prefix)로 선택.
 
-환경변수:
-  KIS_ISA_APP_KEY / KIS_ISA_APP_SECRET / KIS_ISA_ACCOUNT
-
-소형성장주 KR + KODEX국고채30/ACE미국채30/ACE금현물(ISA 계좌) 주문에 사용.
+환경변수 (prefix별로 3개 세트):
+  KIS_ISA_APP_KEY / KIS_ISA_APP_SECRET / KIS_ISA_ACCOUNT (올웨더 — 국고채30/미국채30/금현물 ETF 3종, RP는 수동)
+  KIS_OVERSEAS_APP_KEY / ... (국내주식 매매 시: KR퀀트. kis_overseas.py와 계좌 공유 — 일반 위탁계좌라 국내+해외 겸용)
 """
 from __future__ import annotations
 
@@ -24,7 +23,7 @@ _TR_ORDER_SELL = "TTTC0012U"
 _TR_BALANCE = "TTTC8434R"
 _TR_PRICE = "FHKST01010100"
 
-_TOKEN_CACHE_FILE = Path(__file__).parent / "data" / "kis_domestic_token.json"
+_TOKEN_CACHE_DIR = Path(__file__).parent / "data"
 
 
 class KisToken:
@@ -34,10 +33,11 @@ class KisToken:
         self.account = account
         self._token = ""
         self._token_exp = 0.0
+        self._cache_file = _TOKEN_CACHE_DIR / f"kis_domestic_token_{account}.json"
 
     def _load_cached(self) -> str | None:
         try:
-            data = json.loads(_TOKEN_CACHE_FILE.read_text(encoding="utf-8"))
+            data = json.loads(self._cache_file.read_text(encoding="utf-8"))
             if data.get("access_token") and time.time() < data.get("expires_at", 0):
                 self._token = data["access_token"]
                 self._token_exp = data["expires_at"]
@@ -47,8 +47,8 @@ class KisToken:
         return None
 
     def _save_cached(self) -> None:
-        _TOKEN_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TOKEN_CACHE_FILE.write_text(
+        self._cache_file.parent.mkdir(parents=True, exist_ok=True)
+        self._cache_file.write_text(
             json.dumps({"access_token": self._token, "expires_at": self._token_exp}, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -79,8 +79,13 @@ class KisToken:
         }
 
 
-def get_access_token() -> KisToken:
-    return KisToken(os.environ["KIS_ISA_APP_KEY"], os.environ["KIS_ISA_APP_SECRET"], os.environ["KIS_ISA_ACCOUNT"])
+def get_access_token(prefix: str = "ISA") -> KisToken:
+    """prefix: "ISA"(올웨더 채권/금 ETF 3종) 또는 "OVERSEAS"(국내주식 매매 시 KR퀀트용, kis_overseas.py와 계좌 공유)."""
+    return KisToken(
+        os.environ[f"KIS_{prefix}_APP_KEY"],
+        os.environ[f"KIS_{prefix}_APP_SECRET"],
+        os.environ[f"KIS_{prefix}_ACCOUNT"],
+    )
 
 
 def get_balance(token: KisToken) -> dict:

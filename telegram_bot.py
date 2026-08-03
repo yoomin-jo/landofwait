@@ -102,9 +102,8 @@ def cmd_status_haa() -> str:
 def cmd_status_olweather() -> str:
     state = json.loads(OLWEATHER_STATE_PATH.read_text(encoding="utf-8")) if OLWEATHER_STATE_PATH.exists() else {}
     month = state.get("last_rebalance_month", "-")
-    pending = state.get("pending_settlements", [])
 
-    token = kis_domestic.get_access_token()
+    token = kis_domestic.get_access_token("ISA")
     balance = kis_domestic.get_balance(token)
     total = balance["cash"] + balance["eval_amt"]
     qty = balance["qty"]
@@ -122,10 +121,6 @@ def cmd_status_olweather() -> str:
             except Exception:
                 price = 0.0
             lines.append(f"  {name}({ticker}): {q}주 (₩{q*price:,.0f})")
-    if pending:
-        lines.append("정산 대기(CMA 이체 예정):")
-        for p in pending:
-            lines.append(f"  {p['name']} ₩{p['amount']:,.0f} (정산일 {p['settle_date']})")
 
     return "\n".join(lines)
 
