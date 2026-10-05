@@ -18,12 +18,16 @@ import yfinance as yf
 from dotenv import load_dotenv
 from pandas.tseries.offsets import BMonthEnd
 
+import coin_alts
 import kis_domestic
 import kis_overseas
+import upbit_api
+from coin_sleeve import MARKETS
 
 load_dotenv()
 
 BAND = 0.60
+COIN_MAX = 0.15  # 코인 슬리브(목표 10%) 허용 상한 — 전체 자산 대비 (2026-10-05)
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
@@ -69,11 +73,20 @@ def compute_sleeve_totals() -> dict:
     olweather_krw = isa_total_krw + quant_total_krw
     combined = olweather_krw + haa_krw
 
+    # 코인 슬리브: 업비트(BTC·ETH·원화) + 알트(ZEC 바이낸스, HYPE 코인원 — .env 수량 × 공개 시세)
+    balances = upbit_api.get_balances()
+    prices = upbit_api.get_prices(list(MARKETS))
+    upbit_krw = balances.get("KRW", 0.0) + sum(balances.get(c, 0.0) * prices[m] for m, c in MARKETS.items())
+    coin_krw = upbit_krw + sum(coin_alts.values_krw(fx).values())
+    grand = combined + coin_krw
+
     return {
         "olweather_krw": olweather_krw,
         "haa_krw": haa_krw,
         "olweather_ratio": olweather_krw / combined if combined > 0 else 0.0,
         "haa_ratio": haa_krw / combined if combined > 0 else 0.0,
+        "coin_krw": coin_krw,
+        "coin_ratio": coin_krw / grand if grand > 0 else 0.0,
         "fx": fx,
     }
 
@@ -81,14 +94,20 @@ def compute_sleeve_totals() -> dict:
 def check_band() -> str | None:
     """60% 밴드 초과 시 알림 텍스트 반환, 아니면 None (아무것도 안 함 — DESIGN.md 스펙)."""
     totals = compute_sleeve_totals()
+    alerts = []
     if totals["olweather_ratio"] > BAND or totals["haa_ratio"] > BAND:
-        return (
+        alerts.append(
             f"[경고] 슬리브간 60% 밴드 초과!\n"
             f"올웨더: ₩{totals['olweather_krw']:,.0f} ({totals['olweather_ratio']:.1%})\n"
             f"HAA:    ₩{totals['haa_krw']:,.0f} ({totals['haa_ratio']:.1%})\n"
             f"환전 필요 — 수동으로 슬리브간 리밸런싱 하세요"
         )
-    return None
+    if totals["coin_ratio"] > COIN_MAX:
+        alerts.append(
+            f"[경고] 코인 비중 {totals['coin_ratio']:.1%} — 허용 상한 {COIN_MAX:.0%} 초과 (목표 10%)\n"
+            f"코인: ₩{totals['coin_krw']:,.0f} — 일부 이익실현 후 다른 슬리브로 옮기는 것 검토"
+        )
+    return "\n\n".join(alerts) or None
 
 
 def run() -> None:

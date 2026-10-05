@@ -133,7 +133,8 @@ def cmd_status_band() -> str:
     return (
         f"[슬리브간 비중]{flag}\n"
         f"올웨더: ₩{totals['olweather_krw']:,.0f} ({totals['olweather_ratio']:.1%})\n"
-        f"HAA:    ₩{totals['haa_krw']:,.0f} ({totals['haa_ratio']:.1%})"
+        f"HAA:    ₩{totals['haa_krw']:,.0f} ({totals['haa_ratio']:.1%})\n"
+        f"코인:   ₩{totals['coin_krw']:,.0f} (전체의 {totals['coin_ratio']:.1%}, 상한 {sleeve_monitor.COIN_MAX:.0%})"
     )
 
 
@@ -154,6 +155,15 @@ def cmd_status_coin() -> str:
         tgt = state.get("target_weights", {}).get(m, 0.0)
         cur = values[m] / total if total > 0 else 0.0
         lines.append(f"  {c}: ₩{values[m]:,.0f} {cur:.0%}  목표{tgt:.0%}" + (f" (예측 {fc:.1f})" if fc is not None else ""))
+
+    import coin_alts
+    alt_values = coin_alts.values_krw(sleeve_monitor.get_usdkrw())
+    alt_fc = state.get("alt_forecasts", {})
+    lines.append("[알트 (신호 알림만, 매매는 수동)]")
+    for coin, venue in coin_alts.ALTS.items():
+        fc = alt_fc.get(coin)
+        rec = f" 권장보유 {min(1.0, fc / 10):.0%} (예측 {fc:.1f})" if fc is not None else ""
+        lines.append(f"  {coin}({venue}): ₩{alt_values[coin]:,.0f}{rec}")
     return "\n".join(lines)
 
 

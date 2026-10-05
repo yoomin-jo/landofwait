@@ -3,6 +3,7 @@
 차이가 버퍼(기본비중의 10%)를 넘을 때만 매매한다. 매도 먼저, 그다음 원화 한도 내 매수.
 
 업비트 계좌 전체(원화 + BTC + ETH)를 코인 슬리브 예산으로 본다 — 슬리브 간 자금 이동은 수동.
+알트(ZEC 바이낸스, HYPE 코인원)는 같은 신호로 권장 보유비율만 계산해 바뀔 때 알림(coin_alts.py, 매매는 수동).
 COIN_LIVE=1 이 아니면 모의 실행(주문 안 내고 텔레그램으로 예정 주문만 알림).
 """
 import json
@@ -15,6 +16,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+import coin_alts
 from coin_sleeve import BASE_WEIGHT, BUFFER, MARKETS, compute_target_weights
 from upbit_api import MIN_ORDER_KRW, buy_market_krw, get_balances, get_prices, sell_market_volume
 
@@ -76,12 +78,37 @@ def compute_orders(balances: dict, prices: dict, weights: dict) -> tuple[list[di
     return orders, total
 
 
+def check_alts(state: dict) -> None:
+    """ZEC·HYPE 권장 보유비율이 직전 알림 대비 BUFFER(10%p) 이상 바뀌면 텔레그램 알림만(매매는 수동).
+    첫 실행은 현재 권장값을 기준으로 저장만 한다(현재 전량 보유 중이라는 전제)."""
+    forecasts = coin_alts.compute_forecasts()
+    qty = coin_alts.holdings()
+    last = state.setdefault("alt_exposure", {})
+    state["alt_forecasts"] = forecasts
+    for coin, venue in coin_alts.ALTS.items():
+        exposure = min(1.0, forecasts[coin] / 10)
+        prev = last.get(coin)
+        if prev is not None and abs(exposure - prev) >= BUFFER:
+            keep = qty.get(coin, 0.0) * exposure
+            action = "늘리세요" if exposure > prev else "줄이세요"
+            notify(f"[코인 알트] {coin}({venue}) 예측 {forecasts[coin]:.1f} → 권장 보유 {exposure:.0%} "
+                   f"(직전 {prev:.0%}) — {action}. 기준 수량 {qty.get(coin, 0.0):.4f}개 중 약 {keep:.4f}개 보유, "
+                   f"매매 후 .env ALT_HOLDINGS 수량 갱신 필요")
+        if prev is None or abs(exposure - prev) >= BUFFER:
+            last[coin] = exposure
+
+
 def run() -> None:
     today = datetime.now().strftime("%Y-%m-%d")
     state = _load_state()
     if state.get("last_run_date") == today:
         logger.info("오늘(%s) 이미 실행 완료 — 스킵", today)
         return
+
+    try:
+        check_alts(state)
+    except Exception as e:
+        notify(f"[코인 알트] 신호 계산 실패: {e}")
 
     try:
         weights, forecasts = compute_target_weights()
