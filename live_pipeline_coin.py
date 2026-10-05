@@ -18,6 +18,7 @@ import requests
 from dotenv import load_dotenv
 
 import coin_alts
+import pause
 from coin_sleeve import BASE_WEIGHT, BUFFER, MARKETS, compute_target_weights
 from upbit_api import MIN_ORDER_KRW, buy_market_krw, get_balances, get_prices, sell_market_volume
 
@@ -127,6 +128,9 @@ def run_alts(state: dict) -> None:
 
 
 def run() -> None:
+    if pause.is_paused("coin"):
+        logger.info("긴급 정지 중(/resume coin으로 해제) — 스킵")
+        return
     today = datetime.now().strftime("%Y-%m-%d")
     state = _load_state()
     if state.get("last_run_date") == today:

@@ -35,6 +35,8 @@ HELP_TEXT = (
     "/run_haa        — HAA 리밸런싱 수동 실행\n"
     "/run_olweather  — 올웨더 ETF 리밸런싱 수동 실행\n"
     "/run_coin       — 코인 리밸런싱 수동 실행\n"
+    "/pause 대상     — 긴급 정지 (대상: coin / haa / olweather / all) — 모니터링은 계속\n"
+    "/resume 대상    — 정지 해제\n"
     "/perf           — 이번 달 성과(월초 이후)와 고점 대비 낙폭\n"
     "/flow 슬리브 금액 [메모] — 입출금·슬리브 간 이동 기록 (슬리브: olweather/haa/coin, 입금 +, 출금 −)\n"
     "                  예) /flow coin 500000 업비트 입금 · 이동은 두 번: /flow olweather -1000000 , /flow haa 1000000\n"
@@ -216,6 +218,19 @@ def handle_command(text: str) -> str | None:
     if text == "/run_olweather":
         _run_pipeline("live_pipeline_olweather.py")
         return "올웨더 ETF 리밸런싱 실행 시작 — 완료 시 알림 전송"
+    if text.startswith("/pause") or text.startswith("/resume"):
+        import pause
+        parts = text.split()
+        if len(parts) < 2:
+            return "사용법: /pause 대상 또는 /resume 대상 (대상: coin / haa / olweather / all)"
+        stop = parts[0] == "/pause"
+        try:
+            names = pause.set_paused(parts[1], stop)
+        except ValueError as e:
+            return str(e)
+        if stop:
+            return f"⛔ 긴급 정지: {', '.join(names)} — 다음 실행부터 매매 안 함. 이미 들어간 주문은 앱에서 직접 정리"
+        return f"▶️ 정지 해제: {', '.join(names)} — 다음 정해진 시각부터 정상 실행"
     if text == "/perf":
         import performance
         return performance.report()

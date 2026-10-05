@@ -40,6 +40,10 @@ def build() -> str:
     if inactive:
         warnings.append(f"비활성 서비스/타이머: {', '.join(inactive)}")
 
+    stopped = [n for n, v in _state("paused.json").items() if v]
+    if stopped:
+        warnings.append(f"긴급 정지 중: {', '.join(stopped)} (/resume으로 해제)")
+
     haa, olw, coin = _state("haa_state.json"), _state("olweather_etf_state.json"), _state("coin_state.json")
     for name, st in (("HAA", haa), ("올웨더", olw)):
         if window_over and st.get("last_rebalance_month") != month:

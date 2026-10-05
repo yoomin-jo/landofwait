@@ -17,6 +17,7 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 
+import pause
 from haa_sleeve import ALL_TICKERS, EXCHANGE, compute_target_weights
 from kis_domestic import get_total_assets
 from kis_overseas import get_access_token, get_current_price, get_us_balance, place_us_order
@@ -115,6 +116,9 @@ def compute_rebalance_orders(current_qty: dict, prices: dict, cash: float, weigh
 
 
 def run() -> None:
+    if pause.is_paused("haa"):
+        logger.info("긴급 정지 중(/resume haa로 해제) — 스킵")
+        return
     if not in_rebalance_window():
         logger.info("월초 매매창(첫 %d영업일) 아님 — 스킵", REBALANCE_WINDOW_BDAYS)
         return
