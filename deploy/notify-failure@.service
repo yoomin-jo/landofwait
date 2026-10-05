@@ -1,0 +1,9 @@
+[Unit]
+Description=서비스 실패 텔레그램 알림 (%i)
+
+[Service]
+Type=oneshot
+# root로 실행 — journalctl로 실패한 서비스 로그를 읽기 위함
+WorkingDirectory=/home/pi/hybrid-portfolio
+ExecStart=/home/pi/hybrid-portfolio/venv/bin/python notify_failure.py %i
+EnvironmentFile=/home/pi/hybrid-portfolio/.env

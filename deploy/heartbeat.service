@@ -1,5 +1,5 @@
 [Unit]
-Description=올웨더 ETF 슬리브 월간 리밸런싱 + 정산알림
+Description=자산배분 봇 하루 1회 생존 신호 (텔레그램 상태 요약)
 After=network-online.target
 Wants=network-online.target
 OnFailure=notify-failure@%n.service
@@ -8,7 +8,7 @@ OnFailure=notify-failure@%n.service
 Type=oneshot
 User=pi
 WorkingDirectory=/home/pi/hybrid-portfolio
-ExecStart=/home/pi/hybrid-portfolio/venv/bin/python live_pipeline_olweather.py
+ExecStart=/home/pi/hybrid-portfolio/venv/bin/python heartbeat.py
 EnvironmentFile=/home/pi/hybrid-portfolio/.env
 
 [Install]

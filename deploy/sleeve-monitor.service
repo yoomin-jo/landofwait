@@ -2,6 +2,7 @@
 Description=슬리브간 60% 밴드 모니터링 (알림 전용, 매매 없음)
 After=network-online.target
 Wants=network-online.target
+OnFailure=notify-failure@%n.service
 
 [Service]
 Type=oneshot

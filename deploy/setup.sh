@@ -19,12 +19,16 @@ sudo cp "$DEPLOY_DIR/sleeve-monitor.timer" /etc/systemd/system/
 sudo cp "$DEPLOY_DIR/coin-rebalance.service" /etc/systemd/system/
 sudo cp "$DEPLOY_DIR/coin-rebalance.timer" /etc/systemd/system/
 sudo cp "$DEPLOY_DIR/hybrid-bot.service" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/notify-failure@.service" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/heartbeat.service" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/heartbeat.timer" /etc/systemd/system/
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now haa-rebalance.timer
 sudo systemctl enable --now olweather-rebalance.timer
 sudo systemctl enable --now sleeve-monitor.timer
 sudo systemctl enable --now coin-rebalance.timer
+sudo systemctl enable --now heartbeat.timer
 sudo systemctl enable --now hybrid-bot.service
 
 echo "설치 완료"

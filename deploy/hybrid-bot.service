@@ -2,6 +2,7 @@
 Description=자산배분 하이브리드 봇 — Telegram Bot
 After=network-online.target
 Wants=network-online.target
+OnFailure=notify-failure@%n.service
 
 [Service]
 Type=simple
