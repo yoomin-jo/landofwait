@@ -23,6 +23,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 HAA_STATE_PATH = Path(__file__).parent / "data" / "haa_state.json"
 OLWEATHER_STATE_PATH = Path(__file__).parent / "data" / "olweather_etf_state.json"
+COIN_STATE_PATH = Path(__file__).parent / "data" / "coin_state.json"
 LOG_DIR = Path(__file__).parent / "logs"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -33,6 +34,7 @@ HELP_TEXT = (
     "/status         — 올웨더+HAA+슬리브간 비중 통합 현황\n"
     "/run_haa        — HAA 리밸런싱 수동 실행\n"
     "/run_olweather  — 올웨더 ETF 리밸런싱 수동 실행\n"
+    "/run_coin       — 코인 리밸런싱 수동 실행\n"
     "/help           — 명령어 목록"
 )
 
@@ -135,6 +137,26 @@ def cmd_status_band() -> str:
     )
 
 
+def cmd_status_coin() -> str:
+    from coin_sleeve import MARKETS
+    import upbit_api
+
+    state = json.loads(COIN_STATE_PATH.read_text(encoding="utf-8")) if COIN_STATE_PATH.exists() else {}
+    balances = upbit_api.get_balances()
+    prices = upbit_api.get_prices(list(MARKETS))
+    values = {m: balances.get(c, 0.0) * prices[m] for m, c in MARKETS.items()}
+    total = balances.get("KRW", 0.0) + sum(values.values())
+    mode = "실거래" if state.get("live") else "모의"
+    lines = [f"[코인 슬리브 (업비트, {mode})]", f"총액: ₩{total:,.0f} (원화 ₩{balances.get('KRW', 0.0):,.0f})",
+             f"마지막 실행: {state.get('last_run_date', '-')}"]
+    for m, c in MARKETS.items():
+        fc = state.get("forecasts", {}).get(m)
+        tgt = state.get("target_weights", {}).get(m, 0.0)
+        cur = values[m] / total if total > 0 else 0.0
+        lines.append(f"  {c}: ₩{values[m]:,.0f} {cur:.0%}  목표{tgt:.0%}" + (f" (예측 {fc:.1f})" if fc is not None else ""))
+    return "\n".join(lines)
+
+
 def cmd_status_version() -> str:
     """배포 누락 확인용 — Pi에서 실제로 돌고 있는 커밋과 로컬 미커밋 변경 여부."""
     def git(*args: str) -> str:
@@ -148,7 +170,7 @@ def cmd_status_version() -> str:
 def cmd_status() -> str:
     sections = []
     for name, fn in [("올웨더 ETF", cmd_status_olweather), ("HAA", cmd_status_haa), ("밴드", cmd_status_band),
-                     ("배포 버전", cmd_status_version)]:
+                     ("코인", cmd_status_coin), ("배포 버전", cmd_status_version)]:
         try:
             sections.append(fn())
         except Exception as e:
@@ -180,6 +202,9 @@ def handle_command(text: str) -> str | None:
     if text == "/run_olweather":
         _run_pipeline("live_pipeline_olweather.py")
         return "올웨더 ETF 리밸런싱 실행 시작 — 완료 시 알림 전송"
+    if text == "/run_coin":
+        _run_pipeline("live_pipeline_coin.py")
+        return "코인 리밸런싱 실행 시작 — 매매 시 알림 전송"
     return None
 
 

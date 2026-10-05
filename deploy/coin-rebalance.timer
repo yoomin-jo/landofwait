@@ -1,0 +1,9 @@
+[Unit]
+Description=코인 슬리브 리밸런싱 타이머 (매일 09:05 KST, 업비트 일봉 09:00 마감 직후 — 버퍼 넘을 때만 매매)
+
+[Timer]
+OnCalendar=*-*-* 09:05:00 Asia/Seoul
+Persistent=true
+
+[Install]
+WantedBy=timers.target
