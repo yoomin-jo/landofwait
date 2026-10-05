@@ -1,6 +1,7 @@
 """실거래 성과 기록 + 월간 리포트 (DESIGN.md "운용 목표와 정상 범위").
-매일 16:30 KST 슬리브별 평가액(sleeve_monitor.compute_sleeve_totals — RP·외화RP·알트 포함)을
-data/performance.csv에 기록하고, 달이 바뀐 첫 기록 때 지난달 리포트를 텔레그램으로 보낸다.
+매시간(09:35~23:35 KST) 슬리브별 평가액(sleeve_monitor.compute_sleeve_totals — RP·외화RP·알트 포함)을
+data/performance.csv에 하루 한 줄로 기록하고(같은 날은 덮어씀), 구글시트 '자산배분 성과'를 갱신한다.
+달이 바뀐 첫 기록 때 지난달 리포트를 텔레그램으로 보낸다.
 
 입금·출금·슬리브 간 이동은 /flow 명령으로 data/flows.csv에 기록 → 수익률 계산에서 제외(시간가중수익률).
 정상 범위(RANGES)를 벗어나도 즉시 규칙을 바꾸지 않고 분기 검토 대상으로만 표시한다.
@@ -112,21 +113,73 @@ def report(month: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def push_sheet() -> None:
+    """구글시트 '자산배분 성과'로 전체 성과표 전송(시트의 Apps Script 웹 앱 doPost — deploy/sheet_webapp.gs).
+    매번 전체를 다시 쓰므로 한 번 실패해도 다음 전송에서 복구된다. SHEET_WEBAPP_URL이 없으면 건너뜀."""
+    url = os.environ.get("SHEET_WEBAPP_URL")
+    if not url:
+        return
+    idx = load_index()
+    snaps = pd.read_csv(SNAP_PATH, parse_dates=["date"]).drop_duplicates("date", keep="last").set_index("date")
+    dd = idx / idx.cummax() - 1
+    now = idx.index[-1]
+    month_start = pd.Timestamp(now.strftime("%Y-%m-01"))
+    before_month = idx[idx.index < month_start]
+    m_base = before_month.iloc[-1] if not before_month.empty else idx.iloc[0]
+    before_year = idx[idx.index < pd.Timestamp(f"{now.year}-01-01")]
+    y_base = before_year.iloc[-1] if not before_year.empty else idx.iloc[0]
+
+    summary = [["슬리브", "평가액", "이번 달", "연초 이후", "고점 대비", "낙폭 한도", "상태"]]
+    for s, name in SLEEVES.items():
+        ok = dd[s].iloc[-1] >= RANGES[s]
+        summary.append([name, int(snaps[s].iloc[-1]), float(idx[s].iloc[-1] / m_base[s] - 1),
+                        float(idx[s].iloc[-1] / y_base[s] - 1), float(dd[s].iloc[-1]), RANGES[s],
+                        "정상" if ok else "범위 이탈 — 분기 검토"])
+
+    month_end = idx.groupby(idx.index.to_period("M")).last()
+    month_ret = month_end / month_end.shift(1) - 1
+    month_ret.iloc[0] = month_end.iloc[0] / idx.iloc[0] - 1
+    monthly = [["월"] + list(SLEEVES.values())] + [
+        [str(p)] + [float(month_ret.loc[p, s]) for s in SLEEVES] for p in month_ret.index]
+
+    names = list(SLEEVES.values())
+    history = [["날짜"] + names + [f"{n} 누적" for n in names] + [f"{n} 낙폭" for n in names]]
+    for d in idx.index:
+        history.append([d.strftime("%Y-%m-%d")] + [int(snaps.loc[d, s]) for s in SLEEVES]
+                       + [float(idx.loc[d, s]) for s in SLEEVES] + [float(dd.loc[d, s]) for s in SLEEVES])
+
+    flows = [["일시", "슬리브", "금액", "메모"]]
+    if FLOW_PATH.exists():
+        for _, r in pd.read_csv(FLOW_PATH).fillna("").iterrows():
+            flows.append([str(r["datetime"]), SLEEVES.get(r["sleeve"], r["sleeve"]), int(r["amount"]), str(r["note"])])
+
+    payload = {"token": os.environ["SHEET_TOKEN"], "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+               "summary": summary, "monthly": monthly, "history": history, "flows": flows}
+    resp = requests.post(url, json=payload, timeout=60)
+    if resp.text.strip() != "ok":
+        raise RuntimeError(f"구글시트 전송 실패: {resp.status_code} {resp.text[:200]}")
+
+
 def notify(text: str) -> None:
     requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
                   json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": text}, timeout=10)
 
 
 def main() -> None:
+    """매시간 실행 — 같은 날짜 기록은 덮어써서 하루 한 줄(그날 마지막 값)만 남긴다."""
     row = snapshot()
     last_date = None
     if SNAP_PATH.exists():
-        prev = pd.read_csv(SNAP_PATH)
-        last_date = str(prev["date"].iloc[-1]) if not prev.empty else None
+        prev = pd.read_csv(SNAP_PATH, dtype={"date": str})
+        if not prev.empty:
+            last_date = prev["date"].iloc[-1]
+            prev = prev[prev["date"] != row["date"]]
+            prev.to_csv(SNAP_PATH, index=False)
     _append(SNAP_PATH, row)
     # 달이 바뀐 첫 기록 → 지난달 리포트
     if last_date and last_date[:7] != row["date"][:7]:
         notify(report(last_date[:7]))
+    push_sheet()
 
 
 if __name__ == "__main__":
