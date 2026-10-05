@@ -142,7 +142,7 @@ def run() -> None:
     for ticker in tickers_needed:
         try:
             time.sleep(1)
-            prices[ticker] = get_current_price(token, ticker, EXCHANGE)
+            prices[ticker] = get_current_price(token, ticker, EXCHANGE[ticker])
         except Exception as e:
             notify(f"{ticker} 현재가 조회 실패: {e}")
             return
@@ -185,7 +185,7 @@ def run() -> None:
         ticker, qty = order["ticker"], order["qty"]
         limit_price = order["price"] * (1 - LIMIT_BUFFER)
         try:
-            place_us_order(token, ticker, EXCHANGE, "sell", qty, limit_price)
+            place_us_order(token, ticker, EXCHANGE[ticker], "sell", qty, limit_price)
             notify(f"sell {ticker} {qty}주 @ ${limit_price:.2f}")
         except Exception:
             logger.exception("매도 실패: %s", order)
@@ -208,7 +208,7 @@ def run() -> None:
         for ticker in tickers_needed:
             try:
                 time.sleep(1)
-                prices[ticker] = get_current_price(token, ticker, EXCHANGE)
+                prices[ticker] = get_current_price(token, ticker, EXCHANGE[ticker])
             except Exception:
                 pass
 
@@ -221,7 +221,7 @@ def run() -> None:
             ticker, qty = order["ticker"], order["qty"]
             limit_price = order["price"] * (1 + LIMIT_BUFFER)
             try:
-                place_us_order(token, ticker, EXCHANGE, "buy", qty, limit_price)
+                place_us_order(token, ticker, EXCHANGE[ticker], "buy", qty, limit_price)
                 notify(f"buy {ticker} {qty}주 @ ${limit_price:.2f}")
             except Exception:
                 logger.exception("매수 실패: %s", order)

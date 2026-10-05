@@ -16,8 +16,9 @@ DEFENSIVE = ["BIL", "IEF"]
 ALL_TICKERS = sorted(set(ATTACK + [CANARY] + DEFENSIVE))
 
 # KIS 거래소 코드 실측 확인 결과: iShares 발행(TLT/IEF)는 NASD, 나머지(State Street/Vanguard/
-# Invesco 발행)는 NYSE Arca 상장이라 KIS 분류상 AMEX.
-EXCHANGE = {t: ("NASD" if t in ("TLT", "IEF") else "AMEX") for t in ALL_TICKERS}
+# Invesco 발행)는 NYSE Arca 상장이라 KIS 분류상 AMEX. 단 PDBC는 나스닥 상장이라 NASD
+# (2026-10-05 KIS 시세조회 확인: AMEX는 빈 응답, NASD는 정상 — DBC→PDBC 교체 때 누락됐던 것).
+EXCHANGE = {t: ("NASD" if t in ("TLT", "IEF", "PDBC") else "AMEX") for t in ALL_TICKERS}
 
 
 def fetch_monthly_prices(as_of: str | None = None) -> pd.DataFrame:
