@@ -17,7 +17,9 @@ from dotenv import load_dotenv
 from pandas.tseries.offsets import BMonthEnd
 
 from haa_sleeve import ALL_TICKERS, EXCHANGE, compute_target_weights
+from kis_domestic import get_total_assets
 from kis_overseas import get_access_token, get_current_price, get_us_balance, place_us_order
+from sleeve_monitor import get_usdkrw
 
 load_dotenv()
 
@@ -65,10 +67,13 @@ def is_month_end_today() -> bool:
     return us_trading_date == BMonthEnd().rollforward(us_trading_date)
 
 
-def compute_rebalance_orders(current_qty: dict, prices: dict, cash: float, weights: dict) -> list[dict]:
+def compute_rebalance_orders(current_qty: dict, prices: dict, cash: float, weights: dict,
+                             outside_usd: float = 0.0) -> list[dict]:
+    """outside_usd: 잔고조회에 안 잡히는 계좌 자금(외화RP 등). 목표금액 계산에는 포함하되
+    바로 쓸 수 있는 돈은 아니므로 매수 가능금액(available)에는 넣지 않는다."""
     tickers = set(current_qty) | set(weights)
     current_values = {t: current_qty.get(t, 0) * prices.get(t, 0) for t in tickers}
-    total_value = sum(current_values.values()) + cash
+    total_value = sum(current_values.values()) + cash + outside_usd
     if total_value <= 0:
         return []
 
@@ -142,8 +147,29 @@ def run() -> None:
             notify(f"{ticker} 현재가 조회 실패: {e}")
             return
 
-    orders = compute_rebalance_orders(current_qty, prices, cash, weights)
-    if not orders:
+    # 외화RP 등 잔고조회에 안 잡히는 자금 — 계좌 총자산(원화)과의 차이로 추정
+    try:
+        fx = get_usdkrw()
+        visible_usd = cash + sum(current_qty.get(t, 0) * prices.get(t, 0) for t in tickers_needed)
+        outside_usd = max(0.0, get_total_assets(token) / fx - visible_usd)
+    except Exception as e:
+        notify(f"총자산(외화RP 포함) 조회 실패 — 리밸런싱 중단: {e}")
+        return
+    if outside_usd > 1:
+        notify(f"잔고조회 밖 자금(외화RP 등) 약 ${outside_usd:,.0f}")
+
+    orders = compute_rebalance_orders(current_qty, prices, cash, weights, outside_usd)
+    # 외화RP에 묶여 못 사는 금액. 방어모드 BIL 100%는 외화RP로 대체 운용 중이라 예외
+    wanted = compute_rebalance_orders(current_qty, prices, cash + outside_usd, weights)
+    buy_value = lambda os_: sum(o["qty"] * o["price"] for o in os_ if o["side"] == "buy")
+    shortfall_usd = 0.0 if weights == {"BIL": 1.0} else buy_value(wanted) - buy_value(orders)
+    if shortfall_usd > 0.01 * (visible_usd + outside_usd):
+        notify(f"외화RP에서 약 ${shortfall_usd:,.0f} 매도(인출) 필요 — 매도 후 오늘(한국시간) 자정 전, "
+               f"미국장 개장 후에 /run_haa 재실행하세요")
+    else:
+        shortfall_usd = 0.0
+
+    if not orders and not shortfall_usd:
         notify("리밸런싱 불필요 (목표비중과 이미 일치)")
         state.update({"last_rebalance_month": month_key, "target_weights": weights, "mode": mode})
         _save_state(state)
@@ -186,7 +212,8 @@ def run() -> None:
             except Exception:
                 pass
 
-        buys = [o for o in compute_rebalance_orders(current_qty, prices, cash, weights) if o["side"] == "buy"]
+        buys = [o for o in compute_rebalance_orders(current_qty, prices, cash, weights, outside_usd)
+                if o["side"] == "buy"]
 
         for i, order in enumerate(buys):
             if i > 0:
@@ -201,8 +228,10 @@ def run() -> None:
                 notify(f"매수 실패: buy {ticker} {qty}주")
                 has_failure = True
 
+    if shortfall_usd:
+        has_failure = True
     if has_failure:
-        notify("일부 주문 실패 — 다음 실행 시 재시도")
+        notify("일부 주문 실패/미완료 — 다음 실행 시 재시도")
     else:
         state.update({"last_rebalance_month": month_key, "target_weights": weights, "mode": mode})
         _save_state(state)

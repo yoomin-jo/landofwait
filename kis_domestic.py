@@ -135,10 +135,13 @@ def get_balance(token: KisToken) -> dict:
 def get_total_assets(token: KisToken) -> float:
     """투자계좌자산현황조회(CTRP6548R, HTS [0891] 결제기준) 총자산금액.
     get_balance()의 주식잔고조회에는 RP가 안 잡혀 계좌 총액이 작게 나오므로, RP를 포함한 계좌 전체
-    금액이 필요할 때 사용(2026-10-05 ISA 실조회로 RP 행이 포함됨을 확인)."""
+    금액이 필요할 때 사용(2026-10-05 ISA 실조회로 RP 행이 포함됨을 확인). 원화 기준.
+    해외계좌(외화RP·해외주식 포함)도 같은 API로 조회되므로 kis_overseas 토큰도 받는다(HAA 실조회 확인)."""
+    headers = token.headers("CTRP6548R")
+    headers["custtype"] = "P"  # kis_overseas 토큰 헤더에는 없음 — 이 API는 필수
     resp = requests.get(
         f"{_BASE_URL}/uapi/domestic-stock/v1/trading/inquire-account-balance",
-        headers=token.headers("CTRP6548R"),
+        headers=headers,
         params={"CANO": token.account[:8], "ACNT_PRDT_CD": token.account[8:],
                 "INQR_DVSN_1": "", "BSPR_BF_DT_APLY_YN": ""},
         timeout=10,

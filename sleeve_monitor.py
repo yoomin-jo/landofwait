@@ -4,8 +4,8 @@
 
 소형성장주 KR/US는 별도 티커 추적 없이 계좌 총평가액으로만 판단(사용자 확인 방식) —
 ISA는 채권/금 ETF 3종 전용, 소형주퀀트 계좌는 KR+US 겸용(계좌 하나로 국내+해외 매매, env prefix는 OVERSEAS 그대로 유지).
-KR퀀트 자동매매(Phase 3)는 아직 미구현 — 소형주퀀트 계좌 잔고 조회가 지금은 해외(US) 쪽만 잡히고
-국내 보유분은 안 잡히는 상태. Phase 3 구현 시 kis_domestic.get_balance("OVERSEAS")도 합산 필요.
+계좌 총액은 투자계좌자산현황조회(CTRP6548R) 총자산을 써서 소형주퀀트 계좌의 국내+해외 보유분과
+RP·외화RP가 모두 잡힌다(2026-10-05, 이전에는 해외 보유분만 잡혔음).
 """
 from __future__ import annotations
 
@@ -58,21 +58,15 @@ def get_usdkrw() -> float:
 
 def compute_sleeve_totals() -> dict:
     """{"olweather_krw":.., "haa_krw":.., "olweather_ratio":.., "haa_ratio":.., "fx":..}"""
-    isa_token = kis_domestic.get_access_token("ISA")
-    isa_total_krw = kis_domestic.get_total_assets(isa_token)  # RP 포함 (주식잔고조회는 RP 누락)
-
-    overseas_token = kis_overseas.get_access_token("OVERSEAS")
-    overseas_balance = kis_overseas.get_us_balance(overseas_token)
-    overseas_total_usd = overseas_balance["equity_usd"]
-
-    haa_token = kis_overseas.get_access_token("HAA")
-    haa_balance = kis_overseas.get_us_balance(haa_token)
-    haa_total_usd = haa_balance["equity_usd"]
+    # 계좌별 총자산(CTRP6548R, 원화) — RP·외화RP·국내+해외 보유분 전부 포함.
+    # 잔고조회 API는 RP/외화RP를 빼먹어 HAA(외화RP 대기 중)가 거의 0으로 잡혔음(2026-10-05).
+    isa_total_krw = kis_domestic.get_total_assets(kis_domestic.get_access_token("ISA"))
+    quant_total_krw = kis_domestic.get_total_assets(kis_overseas.get_access_token("OVERSEAS"))
+    haa_krw = kis_domestic.get_total_assets(kis_overseas.get_access_token("HAA"))
 
     fx = get_usdkrw()
 
-    olweather_krw = isa_total_krw + overseas_total_usd * fx
-    haa_krw = haa_total_usd * fx
+    olweather_krw = isa_total_krw + quant_total_krw
     combined = olweather_krw + haa_krw
 
     return {

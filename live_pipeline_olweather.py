@@ -1,7 +1,7 @@
-"""올웨더 슬리브 채권/금 ETF 3종 월간 리밸런싱 자동매매 (DESIGN.md Sleeve 1, 마켓타이밍 오버레이).
+"""올웨더 슬리브 채권/금 ETF 3종 월간 리밸런싱 자동매매 (DESIGN.md Sleeve 1, Carver식 연속 추세신호).
 ISA 계좌 전용(소형성장주 KR/US는 소형주퀀트 계좌 소관, 별도 파이프라인).
 
-60SMA 이탈 시 대기자금은 RP로 전환하는데, RP는 KIS Open API로 매수 불가(API 미지원 확인됨)라
+신호 미보유분 대기자금은 RP로 전환하는데, RP는 KIS Open API로 매수 불가(API 미지원 확인됨)라
 자동매매 대상에서 제외 — 그냥 현금으로 남겨두고 텔레그램으로 수동 RP 전환 알림만 보낸다.
 """
 import json
@@ -15,7 +15,7 @@ import requests
 from dotenv import load_dotenv
 from pandas.tseries.offsets import BMonthEnd
 
-from olweather_etf_sleeve import TICKERS, compute_target_weights
+from olweather_etf_sleeve import BUFFER, TICKERS, WEIGHT_IN_ISA, compute_target_weights
 from kis_domestic import get_access_token, get_balance, get_current_price, get_total_assets, buy_market, sell_market
 
 load_dotenv()
@@ -63,6 +63,10 @@ def is_month_end_today() -> bool:
 def compute_rebalance_orders(current_qty: dict, prices: dict, total: float, weights: dict) -> list[dict]:
     orders = []
     for ticker in ALL_NAMES:
+        # 버퍼: 목표와 현재 비중 차이가 기본비중의 10% 미만이면 매매 안 함 (Carver buffering)
+        current_w = current_qty.get(ticker, 0) * prices.get(ticker, 0) / total if total > 0 else 0.0
+        if abs(weights.get(ticker, 0.0) - current_w) < BUFFER * WEIGHT_IN_ISA[ticker]:
+            continue
         target_value = total * weights.get(ticker, 0.0)
         target_qty = int(target_value / prices[ticker]) if prices.get(ticker) else 0
         diff = target_qty - current_qty.get(ticker, 0)
