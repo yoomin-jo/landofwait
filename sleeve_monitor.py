@@ -1,10 +1,10 @@
 """슬리브간 60% 밴드 모니터링 (DESIGN.md "슬리브 간 리밸런싱 규칙").
-매월 말 올웨더(ISA+OVERSEAS 계좌 총평가액 합산) vs HAA(HAA 계좌 총평가액) 비중을 체크,
+매월 말 올웨더(ISA+소형주퀀트 계좌 총평가액 합산) vs HAA(HAA 계좌 총평가액) 비중을 체크,
 60%를 넘는 쪽이 있으면 텔레그램 알림만 보냄 — 환전 필요해서 실제 리밸런싱은 항상 수동.
 
 소형성장주 KR/US는 별도 티커 추적 없이 계좌 총평가액으로만 판단(사용자 확인 방식) —
-ISA는 채권/금 ETF 3종 전용, OVERSEAS는 소형성장주 KR+US 겸용(계좌 하나로 국내+해외 매매).
-KR퀀트 자동매매(Phase 3)는 아직 미구현 — OVERSEAS 잔고 조회가 지금은 해외(US) 쪽만 잡히고
+ISA는 채권/금 ETF 3종 전용, 소형주퀀트 계좌는 KR+US 겸용(계좌 하나로 국내+해외 매매, env prefix는 OVERSEAS 그대로 유지).
+KR퀀트 자동매매(Phase 3)는 아직 미구현 — 소형주퀀트 계좌 잔고 조회가 지금은 해외(US) 쪽만 잡히고
 국내 보유분은 안 잡히는 상태. Phase 3 구현 시 kis_domestic.get_balance("OVERSEAS")도 합산 필요.
 """
 from __future__ import annotations

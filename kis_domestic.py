@@ -5,7 +5,7 @@
 
 환경변수 (prefix별로 3개 세트):
   KIS_ISA_APP_KEY / KIS_ISA_APP_SECRET / KIS_ISA_ACCOUNT (올웨더 — 국고채30/미국채30/금현물 ETF 3종, RP는 수동)
-  KIS_OVERSEAS_APP_KEY / ... (국내주식 매매 시: KR퀀트. kis_overseas.py와 계좌 공유 — 일반 위탁계좌라 국내+해외 겸용)
+  KIS_OVERSEAS_APP_KEY / ... (소형주퀀트 계좌, 국내주식 매매 시 KR퀀트용. kis_overseas.py와 계좌 공유 — 일반 위탁계좌라 국내+해외 겸용)
 """
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ import requests
 
 _BASE_URL = "https://openapi.koreainvestment.com:9443"
 
-_TR_ORDER_BUY = "TTTC0011U"
-_TR_ORDER_SELL = "TTTC0012U"
+_TR_ORDER_BUY = "TTTC0012U"  # 문서: (매수) TTTC0012U
+_TR_ORDER_SELL = "TTTC0011U"  # 문서: (매도) TTTC0011U
 _TR_BALANCE = "TTTC8434R"
 _TR_PRICE = "FHKST01010100"
 
@@ -75,6 +75,7 @@ class KisToken:
             "appkey": self.app_key,
             "appsecret": self.app_sec,
             "tr_id": tr_id,
+            "custtype": "P",
             "Content-Type": "application/json; charset=utf-8",
         }
 
@@ -155,6 +156,12 @@ def sell_market(token: KisToken, ticker: str, qty: int) -> dict:
     return _order(token, ticker, "sell", qty, ord_dvsn="00", price=int(price))
 
 
+def buy_limit(token: KisToken, ticker: str, qty: int) -> dict:
+    """지정가 매수 — 현재가로 주문(2026-10 KR퀀트 리밸런싱용, 관리종목 등 단일가매매 대응)."""
+    price = get_current_price(token, ticker)
+    return _order(token, ticker, "buy", qty, ord_dvsn="00", price=int(price))
+
+
 def _order(token: KisToken, ticker: str, side: str, qty: int, ord_dvsn: str, price: int) -> dict:
     tr_id = _TR_ORDER_BUY if side == "buy" else _TR_ORDER_SELL
     body = {
@@ -166,7 +173,7 @@ def _order(token: KisToken, ticker: str, side: str, qty: int, ord_dvsn: str, pri
         "ORD_UNPR": str(price),
     }
     resp = requests.post(
-        f"{_BASE_URL}/uapi/domestic-stock/v1/trading/order",
+        f"{_BASE_URL}/uapi/domestic-stock/v1/trading/order-cash",
         headers=token.headers(tr_id), json=body, timeout=10,
     )
     resp.raise_for_status()

@@ -1,9 +1,9 @@
 """KIS(한국투자증권) 해외주식 REST API 래퍼. d:\\tqqq\\kis_api.py 패턴을 그대로 이식.
-모의투자 없음 — 무조건 실전(prod) 계좌. 해외계좌가 2개(소형성장주 US용, HAA전용)로 분리되어 있어
+모의투자 없음 — 무조건 실전(prod) 계좌. 해외계좌가 2개(소형주퀀트 계좌, HAA전용)로 분리되어 있어
 get_access_token(prefix)로 어느 계좌를 쓸지 선택한다.
 
 환경변수 (prefix별로 3개 세트):
-  KIS_OVERSEAS_APP_KEY / KIS_OVERSEAS_APP_SECRET / KIS_OVERSEAS_ACCOUNT (소형성장주 US 등 일반 해외주식)
+  KIS_OVERSEAS_APP_KEY / KIS_OVERSEAS_APP_SECRET / KIS_OVERSEAS_ACCOUNT (소형주퀀트 계좌 — env prefix는 OVERSEAS 유지)
   KIS_HAA_APP_KEY / KIS_HAA_APP_SECRET / KIS_HAA_ACCOUNT (HAA 슬리브 전용)
 
 국내(ISA) 계좌는 kis_domestic.py 참조.
@@ -83,7 +83,7 @@ class KisToken:
 
 
 def get_access_token(prefix: str = "OVERSEAS") -> KisToken:
-    """prefix: "OVERSEAS"(소형성장주 US 등 일반 해외주식) 또는 "HAA"(HAA 전용 계좌)."""
+    """prefix: "OVERSEAS"(소형주퀀트 계좌) 또는 "HAA"(HAA 전용 계좌)."""
     return KisToken(
         os.environ[f"KIS_{prefix}_APP_KEY"],
         os.environ[f"KIS_{prefix}_APP_SECRET"],
