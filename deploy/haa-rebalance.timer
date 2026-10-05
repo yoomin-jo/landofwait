@@ -1,8 +1,8 @@
 [Unit]
-Description=HAA Rebalancing Timer (Daily 06:30 KST, 미국 장마감 이후 — 내부에서 월말 여부 체크 후 아니면 no-op)
+Description=HAA Rebalancing Timer (매일 23:45 KST, 미국 정규장 중 — 내부에서 월초 5영업일 매매창·이번 달 완료 여부 체크 후 아니면 no-op)
 
 [Timer]
-OnCalendar=*-*-* 06:30:00 Asia/Seoul
+OnCalendar=*-*-* 23:45:00 Asia/Seoul
 Persistent=true
 
 [Install]

@@ -1,6 +1,8 @@
 """HAA 슬리브 월간 리밸런싱 자동매매 (DESIGN.md Sleeve 2, 원조 스펙 그대로).
-평일 매일 트리거되지만, "오늘이 이번 달 마지막 미국 거래일(근사)"이고 이번 달에 아직
-리밸런싱 안 했을 때만 실제로 동작한다 (d:\\tqqq\\live_pipeline.py 구조를 본뜸).
+매일 23:45 KST(미국 정규장 중 — 서머타임 22:30 개장/겨울 23:30 개장 모두 커버) 트리거되지만,
+월초 매매창(이번 달 첫 5영업일) 안이고 이번 달 리밸런싱이 아직 완료 안 됐을 때만 동작한다.
+신호는 전월 말 종가 기준(월말 신호 → 익월 첫 거래일 매매, DESIGN.md 확정 스펙). 주문 실패·
+외화RP 인출 필요·휴장 등으로 미완료면 다음 날 같은 시각에 자동 재시도.
 
 매월 항상 리밸런싱(편입종목 불변이어도 목표비중으로 재정렬) — HAA 원조 스펙, buy-only 아님.
 """
@@ -14,7 +16,6 @@ from pathlib import Path
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from pandas.tseries.offsets import BMonthEnd
 
 from haa_sleeve import ALL_TICKERS, EXCHANGE, compute_target_weights
 from kis_domestic import get_total_assets
@@ -58,13 +59,21 @@ def _save_state(state: dict) -> None:
     STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def is_month_end_today() -> bool:
-    """이 파이프라인은 미국 장마감 이후(KST 익일 새벽 06:30, deploy/haa-rebalance.timer 참조)에
-    돌아가므로, KST 기준 "오늘"이 아니라 방금 마감한 미국 거래일(KST 기준 어제)이 그 달의
-    마지막 영업일인지 확인해야 함. 주말만 고려, 미국 공휴일은 미반영 — 근사치. 실제 휴장일과
-    어긋나면 최대 며칠 늦게 실행될 수 있음(월간 전략이라 허용 가능한 오차)."""
-    us_trading_date = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
-    return us_trading_date == BMonthEnd().rollforward(us_trading_date)
+REBALANCE_WINDOW_BDAYS = 5
+
+
+def in_rebalance_window() -> bool:
+    """월초 매매창: 이번 달 첫 영업일 ~ 5영업일째. 23:45 KST 실행이라 한국 날짜 = 미국 거래일 날짜.
+    주말만 고려 — 미국 휴장일엔 주문이 실패해 다음 날 재시도로 흡수된다."""
+    today = pd.Timestamp.now().normalize()
+    if today.weekday() >= 5:
+        return False
+    return len(pd.bdate_range(today.replace(day=1), today)) <= REBALANCE_WINDOW_BDAYS
+
+
+def signal_as_of() -> str:
+    """신호 기준일 = 전월 마지막 날(달력). haa_sleeve가 그 달을 완료된 달로 보고 전월 말 종가로 계산."""
+    return (pd.Timestamp.now().normalize().replace(day=1) - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def compute_rebalance_orders(current_qty: dict, prices: dict, cash: float, weights: dict,
@@ -106,8 +115,8 @@ def compute_rebalance_orders(current_qty: dict, prices: dict, cash: float, weigh
 
 
 def run() -> None:
-    if not is_month_end_today():
-        logger.info("오늘은 월말이 아님 — 스킵")
+    if not in_rebalance_window():
+        logger.info("월초 매매창(첫 %d영업일) 아님 — 스킵", REBALANCE_WINDOW_BDAYS)
         return
 
     month_key = datetime.now().strftime("%Y-%m")
@@ -119,7 +128,7 @@ def run() -> None:
     notify("[HAA 리밸런싱] 시작")
 
     try:
-        result = compute_target_weights()
+        result = compute_target_weights(signal_as_of())
         weights = result["weights"]
         mode = result["mode"]
     except Exception as e:
@@ -164,8 +173,8 @@ def run() -> None:
     buy_value = lambda os_: sum(o["qty"] * o["price"] for o in os_ if o["side"] == "buy")
     shortfall_usd = 0.0 if weights == {"BIL": 1.0} else buy_value(wanted) - buy_value(orders)
     if shortfall_usd > 0.01 * (visible_usd + outside_usd):
-        notify(f"외화RP에서 약 ${shortfall_usd:,.0f} 매도(인출) 필요 — 매도 후 오늘(한국시간) 자정 전, "
-               f"미국장 개장 후에 /run_haa 재실행하세요")
+        notify(f"외화RP에서 약 ${shortfall_usd:,.0f} 매도(인출) 필요 — 매도 후 /run_haa 또는 "
+               f"내일 23:45 자동 재시도(월초 {REBALANCE_WINDOW_BDAYS}영업일 내)")
     else:
         shortfall_usd = 0.0
 
@@ -231,7 +240,7 @@ def run() -> None:
     if shortfall_usd:
         has_failure = True
     if has_failure:
-        notify("일부 주문 실패/미완료 — 다음 실행 시 재시도")
+        notify(f"일부 주문 실패/미완료 — 내일 23:45 자동 재시도(월초 {REBALANCE_WINDOW_BDAYS}영업일 내)")
     else:
         state.update({"last_rebalance_month": month_key, "target_weights": weights, "mode": mode})
         _save_state(state)

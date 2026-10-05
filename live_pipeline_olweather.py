@@ -1,6 +1,10 @@
 """올웨더 슬리브 채권/금 ETF 3종 월간 리밸런싱 자동매매 (DESIGN.md Sleeve 1, Carver식 연속 추세신호).
 ISA 계좌 전용(소형성장주 KR/US는 소형주퀀트 계좌 소관, 별도 파이프라인).
 
+평일 09:10 KST(정규장 중) 트리거되지만, 월초 매매창(이번 달 첫 5영업일) 안이고 이번 달 리밸런싱이
+아직 완료 안 됐을 때만 동작한다. 신호는 전월 말 종가 기준(월말 신호 → 익월 첫 거래일 매매, DESIGN.md
+확정 스펙). 주문 실패·RP 인출 필요·휴장 등으로 미완료면 다음 영업일 같은 시각에 자동 재시도.
+
 신호 미보유분 대기자금은 RP로 전환하는데, RP는 KIS Open API로 매수 불가(API 미지원 확인됨)라
 자동매매 대상에서 제외 — 그냥 현금으로 남겨두고 텔레그램으로 수동 RP 전환 알림만 보낸다.
 """
@@ -13,7 +17,6 @@ from pathlib import Path
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from pandas.tseries.offsets import BMonthEnd
 
 from olweather_etf_sleeve import BUFFER, TICKERS, WEIGHT_IN_ISA, compute_target_weights
 from kis_domestic import get_access_token, get_balance, get_current_price, get_total_assets, buy_market, sell_market
@@ -54,10 +57,21 @@ def _save_state(state: dict) -> None:
     STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def is_month_end_today() -> bool:
-    """국내(KRX) 거래일 기준이라 미국 계산 같은 시차 보정 불필요. 주말만 고려, 공휴일 미반영(근사치)."""
+REBALANCE_WINDOW_BDAYS = 5
+
+
+def in_rebalance_window() -> bool:
+    """월초 매매창: 이번 달 첫 영업일 ~ 5영업일째. 주말만 고려 — 국내 휴장일엔 주문이 실패해
+    다음 영업일 재시도로 흡수된다."""
     today = pd.Timestamp.now().normalize()
-    return today == BMonthEnd().rollforward(today)
+    if today.weekday() >= 5:
+        return False
+    return len(pd.bdate_range(today.replace(day=1), today)) <= REBALANCE_WINDOW_BDAYS
+
+
+def signal_as_of() -> str:
+    """신호 기준일 = 전월 마지막 날(달력) — 장중 실행이라 오늘 미완성 일봉이 섞이지 않게 전일까지만 사용."""
+    return (pd.Timestamp.now().normalize().replace(day=1) - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def compute_rebalance_orders(current_qty: dict, prices: dict, total: float, weights: dict) -> list[dict]:
@@ -77,8 +91,8 @@ def compute_rebalance_orders(current_qty: dict, prices: dict, total: float, weig
 
 
 def run() -> None:
-    if not is_month_end_today():
-        logger.info("오늘은 월말이 아님 — 스킵")
+    if not in_rebalance_window():
+        logger.info("월초 매매창(첫 %d영업일) 아님 — 스킵", REBALANCE_WINDOW_BDAYS)
         return
 
     state = _load_state()
@@ -90,7 +104,7 @@ def run() -> None:
     notify("[올웨더 ETF 슬리브 리밸런싱] 시작")
 
     try:
-        weights = compute_target_weights()
+        weights = compute_target_weights(signal_as_of())
     except Exception as e:
         notify(f"목표비중 계산 실패 — 리밸런싱 중단: {e}")
         return
@@ -167,14 +181,15 @@ def run() -> None:
 
     if shortfall > 0:
         has_failure = True
-        notify(f"예수금 부족 — RP에서 약 ₩{shortfall:,.0f} 인출(매도) 후 오늘 안에 /run_olweather 재실행하세요")
+        notify(f"예수금 부족 — RP에서 약 ₩{shortfall:,.0f} 인출(매도) 후 /run_olweather 또는 "
+               f"다음 영업일 09:10 자동 재시도(월초 {REBALANCE_WINDOW_BDAYS}영업일 내)")
 
     idle_ratio = 1.0 - sum(weights.values())
     if idle_ratio > 0 and not has_failure:
         notify(f"대기자금 목표 약 ₩{total * idle_ratio:,.0f} (RP 포함) — 예수금으로 남은 몫은 RP로 수동 전환하세요")
 
     if has_failure:
-        notify("일부 주문 실패 — 다음 실행 시 재시도")
+        notify(f"일부 주문 실패/미완료 — 다음 영업일 09:10 자동 재시도(월초 {REBALANCE_WINDOW_BDAYS}영업일 내)")
     else:
         state["last_rebalance_month"] = month_key
     _save_state(state)
