@@ -1,0 +1,9 @@
+[Unit]
+Description=성과 기록 타이머 (매일 16:30 KST, 국내장 마감 후 — 달이 바뀐 첫 기록 때 지난달 리포트)
+
+[Timer]
+OnCalendar=*-*-* 16:30:00 Asia/Seoul
+Persistent=true
+
+[Install]
+WantedBy=timers.target

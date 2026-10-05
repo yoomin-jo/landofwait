@@ -17,7 +17,7 @@ load_dotenv()
 
 DATA = Path(__file__).parent / "data"
 UNITS = ["haa-rebalance.timer", "olweather-rebalance.timer", "sleeve-monitor.timer",
-         "coin-rebalance.timer", "hybrid-bot.service"]
+         "coin-rebalance.timer", "performance.timer", "hybrid-bot.service"]
 REBALANCE_WINDOW_BDAYS = 5  # live_pipeline_haa/olweather와 같은 값
 
 

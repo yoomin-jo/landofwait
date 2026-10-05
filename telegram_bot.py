@@ -35,6 +35,9 @@ HELP_TEXT = (
     "/run_haa        — HAA 리밸런싱 수동 실행\n"
     "/run_olweather  — 올웨더 ETF 리밸런싱 수동 실행\n"
     "/run_coin       — 코인 리밸런싱 수동 실행\n"
+    "/perf           — 이번 달 성과(월초 이후)와 고점 대비 낙폭\n"
+    "/flow 슬리브 금액 [메모] — 입출금·슬리브 간 이동 기록 (슬리브: olweather/haa/coin, 입금 +, 출금 −)\n"
+    "                  예) /flow coin 500000 업비트 입금 · 이동은 두 번: /flow olweather -1000000 , /flow haa 1000000\n"
     "/help           — 명령어 목록"
 )
 
@@ -213,6 +216,20 @@ def handle_command(text: str) -> str | None:
     if text == "/run_olweather":
         _run_pipeline("live_pipeline_olweather.py")
         return "올웨더 ETF 리밸런싱 실행 시작 — 완료 시 알림 전송"
+    if text == "/perf":
+        import performance
+        return performance.report()
+    if text.startswith("/flow"):
+        import performance
+        parts = text.split(maxsplit=3)
+        if len(parts) < 3:
+            return "사용법: /flow 슬리브 금액 [메모]  (슬리브: olweather/haa/coin, 입금 +, 출금 −)"
+        try:
+            amount = float(parts[2].replace(",", ""))
+            performance.record_flow(parts[1], amount, parts[3] if len(parts) > 3 else "")
+        except ValueError as e:
+            return f"기록 실패: {e}"
+        return f"기록됨: {parts[1]} {amount:+,.0f}원 — 다음 성과 기록부터 수익률에서 제외"
     if text == "/run_coin":
         _run_pipeline("live_pipeline_coin.py")
         return "코인 리밸런싱 실행 시작 — 매매 시 알림 전송"
