@@ -159,11 +159,12 @@ def cmd_status_coin() -> str:
     import coin_alts
     alt_values = coin_alts.values_krw(sleeve_monitor.get_usdkrw())
     alt_fc = state.get("alt_forecasts", {})
-    lines.append("[알트 (신호 알림만, 매매는 수동)]")
-    for coin, venue in coin_alts.ALTS.items():
+    lines.append("[알트]")
+    for coin, cfg in coin_alts.ALTS.items():
         fc = alt_fc.get(coin)
         rec = f" 권장보유 {min(1.0, fc / 10):.0%} (예측 {fc:.1f})" if fc is not None else ""
-        lines.append(f"  {coin}({venue}): ₩{alt_values[coin]:,.0f}{rec}")
+        how = "자동" if coin_alts.has_keys(coin) else "알림만"
+        lines.append(f"  {coin}({cfg['venue']}, {how}): ₩{alt_values[coin]:,.0f}{rec}")
     return "\n".join(lines)
 
 
