@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from pandas.tseries.offsets import BMonthEnd
 
 from olweather_etf_sleeve import TICKERS, compute_target_weights
-from kis_domestic import get_access_token, get_balance, get_current_price, buy_market, sell_market
+from kis_domestic import get_access_token, get_balance, get_current_price, get_total_assets, buy_market, sell_market
 
 load_dotenv()
 
@@ -96,8 +96,10 @@ def run() -> None:
     try:
         balance = get_balance(token)
         current_qty = {t: balance["qty"].get(t, 0) for t in ALL_NAMES}
-        total = balance["cash"] + balance["eval_amt"]
-        notify(f"ISA(올웨더) 총평가액: ₩{total:,.0f} (현금 ₩{balance['cash']:,.0f})")
+        # 주식잔고조회(cash+eval_amt)에는 RP가 빠져 총액이 작게 잡힘 → 보유 ETF를 잘못 매도하게 됨.
+        # 비중 기준 총액은 RP 포함 총자산(CTRP6548R)을 쓴다 (2026-10-05).
+        total = get_total_assets(token)
+        notify(f"ISA(올웨더) 총자산(RP 포함): ₩{total:,.0f} (예수금 ₩{balance['cash']:,.0f})")
     except Exception as e:
         notify(f"잔고 조회 실패: {e}")
         return
@@ -131,12 +133,26 @@ def run() -> None:
             notify(f"매도 실패: {ALL_NAMES[ticker]}({ticker}) {qty}주")
             has_failure = True
 
+    shortfall = 0.0
     if buys and not has_failure:
         notify("매도 체결 대기 30초...")
         import time
         time.sleep(30)
+        try:
+            cash_left = get_balance(token)["cash"]
+        except Exception as e:
+            notify(f"매수 전 예수금 조회 실패 — 매수 중단: {e}")
+            cash_left, has_failure = 0.0, True
+            buys = []
         for order in buys:
-            ticker, qty = order["ticker"], order["qty"]
+            ticker = order["ticker"]
+            # 대기자금이 RP에 있으면 예수금이 모자람 — 살 수 있는 만큼만 사고 부족분은 RP 인출 알림
+            unit_cost = order["price"] * 1.005
+            qty = min(order["qty"], int(cash_left / unit_cost))
+            shortfall += (order["qty"] - qty) * unit_cost
+            if qty <= 0:
+                continue
+            cash_left -= qty * unit_cost
             try:
                 buy_market(token, ticker, qty)
                 notify(f"buy {ALL_NAMES[ticker]}({ticker}) {qty}주 @ 시장가")
@@ -145,9 +161,13 @@ def run() -> None:
                 notify(f"매수 실패: {ALL_NAMES[ticker]}({ticker}) {qty}주")
                 has_failure = True
 
+    if shortfall > 0:
+        has_failure = True
+        notify(f"예수금 부족 — RP에서 약 ₩{shortfall:,.0f} 인출(매도) 후 오늘 안에 /run_olweather 재실행하세요")
+
     idle_ratio = 1.0 - sum(weights.values())
     if idle_ratio > 0 and not has_failure:
-        notify(f"대기자금 약 ₩{total * idle_ratio:,.0f} — RP는 API 매수 불가, 수동으로 전환하세요")
+        notify(f"대기자금 목표 약 ₩{total * idle_ratio:,.0f} (RP 포함) — 예수금으로 남은 몫은 RP로 수동 전환하세요")
 
     if has_failure:
         notify("일부 주문 실패 — 다음 실행 시 재시도")

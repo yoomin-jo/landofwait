@@ -132,6 +132,26 @@ def get_balance(token: KisToken) -> dict:
     return {"cash": cash, "eval_amt": eval_amt, "qty": qty}
 
 
+def get_total_assets(token: KisToken) -> float:
+    """투자계좌자산현황조회(CTRP6548R, HTS [0891] 결제기준) 총자산금액.
+    get_balance()의 주식잔고조회에는 RP가 안 잡혀 계좌 총액이 작게 나오므로, RP를 포함한 계좌 전체
+    금액이 필요할 때 사용(2026-10-05 ISA 실조회로 RP 행이 포함됨을 확인)."""
+    resp = requests.get(
+        f"{_BASE_URL}/uapi/domestic-stock/v1/trading/inquire-account-balance",
+        headers=token.headers("CTRP6548R"),
+        params={"CANO": token.account[:8], "ACNT_PRDT_CD": token.account[8:],
+                "INQR_DVSN_1": "", "BSPR_BF_DT_APLY_YN": ""},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("rt_cd") != "0":
+        raise RuntimeError(f"투자계좌자산현황 조회 실패: {data.get('msg1', data)}")
+    output2 = data.get("output2")
+    output2 = output2[0] if isinstance(output2, list) else output2
+    return float(output2["tot_asst_amt"])
+
+
 def get_current_price(token: KisToken, ticker: str) -> float:
     resp = requests.get(
         f"{_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price",
