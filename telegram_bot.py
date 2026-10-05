@@ -105,12 +105,12 @@ def cmd_status_olweather() -> str:
 
     token = kis_domestic.get_access_token("ISA")
     balance = kis_domestic.get_balance(token)
-    total = balance["cash"] + balance["eval_amt"]
+    total = kis_domestic.get_total_assets(token)  # RP 포함 (주식잔고조회는 RP 누락)
     qty = balance["qty"]
 
     lines = [
         "[올웨더 ETF 슬리브 (ISA)]",
-        f"ISA 총평가액: ₩{total:,.0f} (현금 ₩{balance['cash']:,.0f})",
+        f"ISA 총자산(RP 포함): ₩{total:,.0f} (예수금 ₩{balance['cash']:,.0f})",
         f"마지막 리밸런싱: {month}",
     ]
     for ticker, name in OLWEATHER_TICKERS.items():

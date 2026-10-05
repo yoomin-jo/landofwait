@@ -59,8 +59,7 @@ def get_usdkrw() -> float:
 def compute_sleeve_totals() -> dict:
     """{"olweather_krw":.., "haa_krw":.., "olweather_ratio":.., "haa_ratio":.., "fx":..}"""
     isa_token = kis_domestic.get_access_token("ISA")
-    isa_balance = kis_domestic.get_balance(isa_token)
-    isa_total_krw = isa_balance["cash"] + isa_balance["eval_amt"]
+    isa_total_krw = kis_domestic.get_total_assets(isa_token)  # RP 포함 (주식잔고조회는 RP 누락)
 
     overseas_token = kis_overseas.get_access_token("OVERSEAS")
     overseas_balance = kis_overseas.get_us_balance(overseas_token)
