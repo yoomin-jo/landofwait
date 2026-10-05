@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 import yfinance as yf
+from pandas.tseries.offsets import BMonthEnd
 
 ATTACK = ["SPY", "IWM", "VEA", "VWO", "PDBC", "VNQ", "IEF", "TLT"]
 CANARY = "TIP"
@@ -31,7 +32,14 @@ def fetch_monthly_prices(as_of: str | None = None) -> pd.DataFrame:
     df = yf.download(ALL_TICKERS, start=start.strftime("%Y-%m-%d"), end=(end + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
                       auto_adjust=True, progress=False)["Close"]
     df = df[ALL_TICKERS].ffill()
-    return df.resample("ME").last()
+    monthly = df.resample("ME").last()
+    # 진행 중인 달 제외: end가 그 달 마지막 영업일 이후일 때만 end가 속한 달을 완료된 달로 본다
+    # (월말 다음 날 KST 새벽 실행·월말 토요일 실행은 완료로 처리, 월중 실행은 직전 월말 기준)
+    end_day = end.normalize()
+    month_start = end_day.to_period("M").to_timestamp()
+    if end_day < BMonthEnd().rollforward(month_start):
+        monthly = monthly[monthly.index < month_start]
+    return monthly
 
 
 def _compute_momentum_row(as_of: str | None) -> tuple[pd.Timestamp, pd.Series]:

@@ -135,9 +135,20 @@ def cmd_status_band() -> str:
     )
 
 
+def cmd_status_version() -> str:
+    """배포 누락 확인용 — Pi에서 실제로 돌고 있는 커밋과 로컬 미커밋 변경 여부."""
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=Path(__file__).parent, capture_output=True,
+                              text=True, timeout=10).stdout.strip()
+    head = git("log", "-1", "--format=%h %cd", "--date=format:%Y-%m-%d %H:%M")
+    dirty = " (미커밋 변경 있음)" if git("status", "--porcelain", "--untracked-files=no") else ""
+    return f"[배포 버전] {head}{dirty}"
+
+
 def cmd_status() -> str:
     sections = []
-    for name, fn in [("올웨더 ETF", cmd_status_olweather), ("HAA", cmd_status_haa), ("밴드", cmd_status_band)]:
+    for name, fn in [("올웨더 ETF", cmd_status_olweather), ("HAA", cmd_status_haa), ("밴드", cmd_status_band),
+                     ("배포 버전", cmd_status_version)]:
         try:
             sections.append(fn())
         except Exception as e:
