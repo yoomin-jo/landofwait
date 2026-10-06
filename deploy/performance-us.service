@@ -1,5 +1,5 @@
 [Unit]
-Description=성과 기록 — 국내장 마감 후 올웨더 평가액(16:00) + 구글시트 갱신 + 월간 리포트
+Description=성과 기록 — 미국장 마감 후 HAA·코인 평가액(07:00) + 구글시트 갱신 + 월간 리포트
 After=network-online.target
 Wants=network-online.target
 OnFailure=notify-failure@%n.service
@@ -8,7 +8,7 @@ OnFailure=notify-failure@%n.service
 Type=oneshot
 User=pi
 WorkingDirectory=/home/pi/hybrid-portfolio
-ExecStart=/home/pi/hybrid-portfolio/venv/bin/python performance.py kr
+ExecStart=/home/pi/hybrid-portfolio/venv/bin/python performance.py us
 EnvironmentFile=/home/pi/hybrid-portfolio/.env
 
 [Install]

@@ -24,6 +24,8 @@ sudo cp "$DEPLOY_DIR/heartbeat.service" /etc/systemd/system/
 sudo cp "$DEPLOY_DIR/heartbeat.timer" /etc/systemd/system/
 sudo cp "$DEPLOY_DIR/performance.service" /etc/systemd/system/
 sudo cp "$DEPLOY_DIR/performance.timer" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/performance-us.service" /etc/systemd/system/
+sudo cp "$DEPLOY_DIR/performance-us.timer" /etc/systemd/system/
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now haa-rebalance.timer
@@ -32,6 +34,7 @@ sudo systemctl enable --now sleeve-monitor.timer
 sudo systemctl enable --now coin-rebalance.timer
 sudo systemctl enable --now heartbeat.timer
 sudo systemctl enable --now performance.timer
+sudo systemctl enable --now performance-us.timer
 sudo systemctl enable --now hybrid-bot.service
 
 echo "설치 완료"

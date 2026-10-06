@@ -1,6 +1,7 @@
 """실거래 성과 기록 + 월간 리포트 (DESIGN.md "운용 목표와 정상 범위").
-매시간(09:35~23:35 KST) 슬리브별 평가액(sleeve_monitor.compute_sleeve_totals — RP·외화RP·알트 포함)을
-data/performance.csv에 하루 한 줄로 기록하고(같은 날은 덮어씀), 구글시트 '자산배분 성과'를 갱신한다.
+하루 2회 슬리브별 평가액(sleeve_monitor.compute_sleeve_totals — RP·외화RP·알트 포함)을 data/performance.csv에
+하루 한 줄로 기록하고 구글시트 '자산배분 성과'를 갱신한다: 07:00 KST(미국장 마감 후) HAA·코인, 16:00 KST(국내장
+마감 후) 올웨더.
 달이 바뀐 첫 기록 때 지난달 리포트를 텔레그램으로 보낸다.
 
 입금·출금·슬리브 간 이동은 /flow 명령으로 data/flows.csv에 기록 → 수익률 계산에서 제외(시간가중수익률).
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -155,9 +157,18 @@ def push_sheet() -> None:
 
     payload = {"token": os.environ["SHEET_TOKEN"], "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                "summary": summary, "monthly": monthly, "history": history, "flows": flows}
-    resp = requests.post(url, json=payload, timeout=60)
-    if resp.text.strip() != "ok":
-        raise RuntimeError(f"구글시트 전송 실패: {resp.status_code} {resp.text[:200]}")
+    # 구글 쪽 일시 오류(2026-10-06 20:35 404 한 번 발생)는 재시도로 흡수 — 3번 모두 실패할 때만 예외
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=payload, timeout=60)
+            if resp.text.strip() == "ok":
+                return
+            error = f"{resp.status_code} {resp.text[:200]}"
+        except requests.RequestException as e:
+            error = str(e)
+        if attempt < 2:
+            time.sleep(30)
+    raise RuntimeError(f"구글시트 전송 3회 실패: {error}")
 
 
 def notify(text: str) -> None:
@@ -165,14 +176,24 @@ def notify(text: str) -> None:
                   json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": text}, timeout=10)
 
 
-def main() -> None:
-    """매시간 실행 — 같은 날짜 기록은 덮어써서 하루 한 줄(그날 마지막 값)만 남긴다."""
-    row = snapshot()
+MODE_COLUMNS = {"us": ["haa", "coin"], "kr": ["olweather"]}  # 07:00 미국장 마감 후 / 16:00 국내장 마감 후
+
+
+def main(mode: str) -> None:
+    """하루 한 줄. mode="us"(07:00)는 HAA·코인 칸만, mode="kr"(16:00)은 올웨더 칸만 갱신하고
+    나머지 칸은 오늘 줄(없으면 직전 줄) 값을 그대로 둔다."""
+    fresh = snapshot()
+    row = dict(fresh)
     last_date = None
     if SNAP_PATH.exists():
         prev = pd.read_csv(SNAP_PATH, dtype={"date": str})
         if not prev.empty:
             last_date = prev["date"].iloc[-1]
+            base = prev.iloc[-1].to_dict()  # 오늘 줄이 있으면 오늘 줄, 없으면 직전 날짜 줄
+            row = {"date": fresh["date"], **{s: int(base[s]) for s in ("olweather", "haa", "coin")}}
+            for col in MODE_COLUMNS[mode]:
+                row[col] = fresh[col]
+            row["total"] = row["olweather"] + row["haa"] + row["coin"]
             prev = prev[prev["date"] != row["date"]]
             prev.to_csv(SNAP_PATH, index=False)
     _append(SNAP_PATH, row)
@@ -183,4 +204,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    main(sys.argv[1] if len(sys.argv) > 1 else "kr")

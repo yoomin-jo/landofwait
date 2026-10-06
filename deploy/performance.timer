@@ -1,8 +1,8 @@
 [Unit]
-Description=성과 기록 타이머 (매시간 09:35~23:35 KST — 구글시트 갱신, 달이 바뀐 첫 기록 때 지난달 리포트)
+Description=성과 기록 타이머 — 국내장 (매일 16:00 KST)
 
 [Timer]
-OnCalendar=*-*-* 09..23:35:00 Asia/Seoul
+OnCalendar=*-*-* 16:00:00 Asia/Seoul
 Persistent=true
 
 [Install]

@@ -1,0 +1,9 @@
+[Unit]
+Description=성과 기록 타이머 — 미국장·코인 (매일 07:00 KST)
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 Asia/Seoul
+Persistent=true
+
+[Install]
+WantedBy=timers.target
