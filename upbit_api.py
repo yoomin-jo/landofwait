@@ -42,7 +42,8 @@ def get_prices(markets: list[str]) -> dict:
 
 
 def get_daily_closes(market: str, days: int = 1500) -> pd.Series:
-    """완료된 일봉 종가(KST 09:00 마감 기준). 진행 중인 오늘 봉은 제외."""
+    """완료된 일봉 종가(KST 09:00 시작~다음 날 09:00 마감). 시작 후 24시간이 안 지난 진행 중인 봉은 제외 —
+    07:00 실행 때 어제 09:00에 시작한 봉이 날짜만 보고 완성 봉으로 섞이지 않게(2026-10-07)."""
     rows, to = [], None
     while len(rows) < days:
         params = {"market": market, "count": 200}
@@ -56,9 +57,10 @@ def get_daily_closes(market: str, days: int = 1500) -> pd.Series:
         rows += batch
         to = batch[-1]["candle_date_time_utc"].replace("T", " ")
         time.sleep(0.15)  # 시세 API 초당 요청 제한
-    closes = pd.Series({pd.Timestamp(c["candle_date_time_kst"][:10]): float(c["trade_price"]) for c in rows}).sort_index()
-    today_kst = pd.Timestamp.now(tz="Asia/Seoul").normalize().tz_localize(None)
-    return closes[closes.index < today_kst]
+    now_kst = pd.Timestamp.now(tz="Asia/Seoul").tz_localize(None)
+    done = {pd.Timestamp(c["candle_date_time_kst"][:10]): float(c["trade_price"]) for c in rows
+            if pd.Timestamp(c["candle_date_time_kst"]) + pd.Timedelta(days=1) <= now_kst}
+    return pd.Series(done).sort_index()
 
 
 def _order(body: dict) -> dict:

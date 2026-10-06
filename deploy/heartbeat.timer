@@ -1,5 +1,5 @@
 [Unit]
-Description=생존 신호 타이머 (매일 09:30 KST — 코인 09:05·올웨더 09:10 실행 뒤)
+Description=생존 신호 타이머 (매일 09:30 KST — 코인 07:00·올웨더 09:10 실행 뒤)
 
 [Timer]
 OnCalendar=*-*-* 09:30:00 Asia/Seoul
