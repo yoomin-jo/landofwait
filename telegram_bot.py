@@ -35,7 +35,7 @@ HELP_TEXT = (
     "/run_haa        — HAA 리밸런싱 수동 실행\n"
     "/run_olweather  — 올웨더 ETF 리밸런싱 수동 실행\n"
     "/run_coin       — 코인 리밸런싱 수동 실행\n"
-    "/pause 대상     — 긴급 정지 (대상: coin / haa / olweather / all) — 모니터링은 계속\n"
+    "/pause 대상     — 긴급 정지 (대상: coin / haa / olweather / coinexp / all) — 모니터링은 계속\n"
     "/resume 대상    — 정지 해제\n"
     "/perf           — 이번 달 성과(월초 이후)와 고점 대비 낙폭\n"
     "/flow 슬리브 금액 [메모] — 입출금·슬리브 간 이동 기록 (슬리브: olweather/haa/coin, 입금 +, 출금 −)\n"
@@ -170,6 +170,8 @@ def cmd_status_coin() -> str:
         rec = f" 권장보유 {min(1.0, fc / 10):.0%} (예측 {fc:.1f})" if fc is not None else ""
         how = "자동" if coin_alts.has_keys(coin) else "알림만"
         lines.append(f"  {coin}({cfg['venue']}, {how}): ₩{alt_values[coin]:,.0f}{rec}")
+    import coin_exp
+    lines.append(coin_exp.summary())
     return "\n".join(lines)
 
 

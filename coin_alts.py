@@ -118,7 +118,7 @@ def _coinone_order(coin: str, side: str, qty: float | None = None, quote_amount:
     if side == "buy":
         body["amount"] = str(int(quote_amount))
     else:
-        body["qty"] = f"{math.floor(qty * 1e4) / 1e4:.4f}"
+        body["qty"] = f"{math.floor(qty * 1e8) / 1e8:.8f}"  # 코인원 qty_unit 0.00000001(BTC·HYPE 공통)
     return _coinone_post("/v2.1/order", body)
 
 
@@ -166,7 +166,19 @@ def balance(coin: str) -> tuple[float, float]:
     """(코인 수량, 대기 현금[USDT 또는 원화]). 키가 없으면 .env ALT_HOLDINGS 수량, 현금 0."""
     if not has_keys(coin):
         return _env_holdings().get(coin, 0.0), 0.0
-    return _binance_balance(coin) if coin == "ZEC" else _coinone_balance(coin)
+    if coin == "ZEC":
+        return _binance_balance(coin)
+    qty, krw = _coinone_balance(coin)
+    return qty, max(0.0, krw - _exp_ledger()["krw"])  # 코인원 원화 중 실험 봇(coin_exp) 몫은 HYPE 예산에서 제외
+
+
+def _exp_ledger() -> dict:
+    """코인 실험 봇 장부(coin_exp.py) — 없으면 0."""
+    path = os.path.join(os.path.dirname(__file__), "data", "coin_exp_state.json")
+    if not os.path.exists(path):
+        return {"krw": 0.0, "btc": 0.0}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def place_order(coin: str, side: str, qty: float | None = None, quote_amount: float | None = None) -> dict:
@@ -182,4 +194,9 @@ def values_krw(usdkrw: float) -> dict:
         qty, cash = balance(coin)
         value = qty * price(coin) + cash
         out[coin] = value * usdkrw if cfg["quote"] == "USDT" else value
+    exp = _exp_ledger()
+    if exp["krw"] or exp["btc"]:  # 코인 실험 봇(코인원 BTC) 장부 평가액도 코인 슬리브에 포함
+        btc_px = float(requests.get("https://api.coinone.co.kr/public/v2/ticker_new/KRW/BTC",
+                                    timeout=10).json()["tickers"][0]["last"])
+        out["EXP"] = exp["krw"] + exp["btc"] * btc_px
     return out

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 PATH = Path(__file__).parent / "data" / "paused.json"
-NAMES = {"coin": "코인", "haa": "HAA", "olweather": "올웨더"}
+NAMES = {"coin": "코인", "haa": "HAA", "olweather": "올웨더", "coinexp": "코인 실험"}
 
 
 def paused() -> dict:
@@ -19,10 +19,10 @@ def is_paused(name: str) -> bool:
 
 
 def set_paused(target: str, value: bool) -> list[str]:
-    """target: coin / haa / olweather / all. 바뀐 파이프라인 이름 목록 반환."""
+    """target: coin / haa / olweather / coinexp / all. 바뀐 파이프라인 이름 목록 반환."""
     names = list(NAMES) if target == "all" else [target]
     if any(n not in NAMES for n in names):
-        raise ValueError("대상은 coin / haa / olweather / all 중 하나")
+        raise ValueError("대상은 coin / haa / olweather / coinexp / all 중 하나")
     state = paused()
     for n in names:
         state[n] = value

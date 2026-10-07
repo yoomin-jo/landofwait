@@ -1,0 +1,10 @@
+[Unit]
+Description=코인 실험 타이머 — 미국장 마감 5분 전 매수 (뉴욕 평일 15:55, 서머타임 자동 반영)
+
+[Timer]
+OnCalendar=Mon..Fri 15:55:00 America/New_York
+# 시각이 핵심인 전략이라 Pi가 꺼져 놓친 실행은 나중에 따라잡지 않음
+Persistent=false
+
+[Install]
+WantedBy=timers.target
