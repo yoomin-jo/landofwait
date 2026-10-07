@@ -169,16 +169,23 @@ def balance(coin: str) -> tuple[float, float]:
     if coin == "ZEC":
         return _binance_balance(coin)
     qty, krw = _coinone_balance(coin)
-    return qty, max(0.0, krw - _exp_ledger()["krw"])  # 코인원 원화 중 실험 봇(coin_exp) 몫은 HYPE 예산에서 제외
+    # 같은 코인원 계좌의 실험 봇(coin_exp) 몫 — 장부 원화 합계와 실험용 HYPE는 HYPE 봇 예산에서 제외
+    exp = _exp_ledgers()
+    exp_krw = sum(led["krw"] for led in exp.values())
+    exp_qty = exp.get(coin, {}).get("qty", 0.0)
+    return max(0.0, qty - exp_qty), max(0.0, krw - exp_krw)
 
 
-def _exp_ledger() -> dict:
-    """코인 실험 봇 장부(coin_exp.py) — 없으면 0."""
+def _exp_ledgers() -> dict:
+    """코인 실험 봇 코인별 장부 {코인: {"krw", "qty", ...}} — 없으면 빈 dict(구 BTC 단일 장부도 읽음)."""
     path = os.path.join(os.path.dirname(__file__), "data", "coin_exp_state.json")
     if not os.path.exists(path):
-        return {"krw": 0.0, "btc": 0.0}
+        return {}
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        st = json.load(f)
+    if "coins" in st:
+        return st["coins"]
+    return {"BTC": {"krw": st.get("krw", 0.0), "qty": st.get("btc", 0.0)}}
 
 
 def place_order(coin: str, side: str, qty: float | None = None, quote_amount: float | None = None) -> dict:
@@ -194,9 +201,13 @@ def values_krw(usdkrw: float) -> dict:
         qty, cash = balance(coin)
         value = qty * price(coin) + cash
         out[coin] = value * usdkrw if cfg["quote"] == "USDT" else value
-    exp = _exp_ledger()
-    if exp["krw"] or exp["btc"]:  # 코인 실험 봇(코인원 BTC) 장부 평가액도 코인 슬리브에 포함
-        btc_px = float(requests.get("https://api.coinone.co.kr/public/v2/ticker_new/KRW/BTC",
-                                    timeout=10).json()["tickers"][0]["last"])
-        out["EXP"] = exp["krw"] + exp["btc"] * btc_px
+    exp = _exp_ledgers()
+    if exp:  # 코인 실험 봇(코인원) 장부 평가액도 코인 슬리브에 포함
+        total = 0.0
+        for coin, led in exp.items():
+            total += led.get("krw", 0.0)
+            if led.get("qty"):
+                total += led["qty"] * float(requests.get(f"https://api.coinone.co.kr/public/v2/ticker_new/KRW/{coin}",
+                                                         timeout=10).json()["tickers"][0]["last"])
+        out["EXP"] = total
     return out
