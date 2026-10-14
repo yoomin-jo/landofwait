@@ -12,7 +12,7 @@
 
 실험 자금은 코인별 장부(data/coin_exp_state.json)로 관리 — 코인원 원화·HYPE는 HYPE 봇과 같은 계좌라
 coin_alts가 장부의 원화 합계와 HYPE 수량을 HYPE 봇 예산에서 뺀다. 최소 주문 5,000원 미만 잔량은 다음 회차로 이월.
-사용: python coin_exp.py buy | sell
+사용: python coin_exp.py buy | sell | sheet(구글시트 '코인 실험봇 성과' 수동 전송, Pi .env COINEXP_SHEET_URL)
 """
 from __future__ import annotations
 
@@ -179,6 +179,66 @@ def summary() -> str:
     return "\n".join(lines)
 
 
+def push_sheet() -> None:
+    """구글시트 '코인 실험봇 성과'로 요약·추이·거래기록 전송(deploy/coin_exp_sheet.gs 웹 앱).
+    매번 전체를 다시 쓰므로 한 번 실패해도 다음 전송에서 복구된다. COINEXP_SHEET_URL이 없으면 건너뜀."""
+    url = os.environ.get("COINEXP_SHEET_URL")
+    if not url:
+        return
+    st = load_state()
+    summary = [["코인", "현재 금액", "실험 수익률", "그냥 보유", "차이", "거래 수", "평균 비용(bp)", "시작가"]]
+    tot_v = tot_h = tot_b = 0.0
+    for coin, led in st["coins"].items():
+        budget = COINS.get(coin, {}).get("budget", 10_000)
+        if led["start_price"] is None:
+            summary.append([coin, budget, 0, 0, 0, 0, 0, ""]); tot_v += budget; tot_h += budget; tot_b += budget
+            continue
+        bid, ask = orderbook(coin)
+        px = (bid + ask) / 2
+        value, hold = led["krw"] + led["qty"] * px, budget * px / led["start_price"]
+        avg = led["cost_bp_sum"] / led["trades"] if led["trades"] else 0.0
+        summary.append([coin, round(value), value / budget - 1, hold / budget - 1, (value - hold) / budget,
+                        led["trades"], round(avg, 2), round(led["start_price"])])
+        tot_v += value; tot_h += hold; tot_b += budget
+    summary.append(["합계", round(tot_v), tot_v / tot_b - 1, tot_h / tot_b - 1, (tot_v - tot_h) / tot_b, "", "", ""])
+
+    trades, history = [], []
+    if TRADES_PATH.exists():
+        rows = list(csv.DictReader(open(TRADES_PATH, encoding="utf-8")))
+        fields = ["time", "coin", "side", "how", "qty", "krw", "fill", "mid", "cost_bp", "ledger_krw", "ledger_qty", "live"]
+        trades = [["시각", "코인", "매수/매도", "방식", "수량", "원화", "체결가", "중간가", "비용(bp)", "장부 원화", "장부 수량", "실거래"]]
+        trades += [[r.get(k, "") for k in fields] for r in rows]
+        # 추이: 회차(시각)마다 코인별 장부 평가액(장부 원화 + 장부 수량 × 중간가)과 그냥 보유 평가액(예산 × 중간가 / 시작가)
+        coins = list(st["coins"])
+        last = {c: (float(COINS.get(c, {}).get("budget", 10_000)),) * 2 for c in coins}
+        first_fill = {}  # 첫 체결 전(미체결 매수 회차)엔 아직 시작 전이라 예산 그대로 둔다
+        for r in rows:
+            if float(r.get("qty") or 0) != 0:
+                first_fill.setdefault(r["coin"], r["time"])
+        for t in sorted({r["time"] for r in rows}):
+            for r in (x for x in rows if x["time"] == t):
+                c, sp = r["coin"], st["coins"].get(r["coin"], {}).get("start_price")
+                if c in last and sp and c in first_fill and t >= first_fill[c] and r.get("mid") not in (None, "", "0"):
+                    mid = float(r["mid"]); budget = COINS.get(c, {}).get("budget", 10_000)
+                    last[c] = (float(r["ledger_krw"]) + float(r["ledger_qty"]) * mid, budget * mid / sp)
+            history.append([t, round(sum(v[0] for v in last.values())), round(sum(v[1] for v in last.values()))]
+                           + [round(x) for c in coins for x in last[c]])
+        history.insert(0, ["시각", "실험 합계", "보유 합계"] + [f"{c} {k}" for c in coins for k in ("실험", "보유")])
+
+    payload = {"token": os.environ["SHEET_TOKEN"], "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+               "summary": summary, "history": history, "trades": trades}
+    for attempt in range(3):  # 구글 쪽 일시 오류는 재시도로 흡수
+        try:
+            resp = requests.post(url, json=payload, timeout=60)
+            if resp.text.strip() == "ok":
+                return
+            error = f"{resp.status_code} {resp.text[:200]}"
+        except requests.RequestException as e:
+            error = str(e)
+        time.sleep(5 * (attempt + 1))
+    raise RuntimeError(f"코인 실험 시트 전송 실패: {error}")
+
+
 def main(side: str) -> None:
     if pause.is_paused("coinexp"):
         logger.info("긴급 정지 중(/resume coinexp) — 스킵"); return
@@ -211,9 +271,17 @@ def main(side: str) -> None:
                 led = st["coins"][coin]
                 w.writerow({"time": datetime.now().strftime("%Y-%m-%d %H:%M"), **row,
                             "ledger_krw": round(led["krw"]), "ledger_qty": round(led["qty"], 8), "live": LIVE})
+    try:  # 시트 전송 실패가 매매 결과(장부·기록 저장)에 영향 주지 않게
+        push_sheet()
+    except Exception as e:
+        logger.exception("시트 전송 실패")
+        errors.append(f"시트: {e}")
     if errors:  # 장부 저장 후 실패로 끝내서 서비스 실패 알림(OnFailure)이 가게
         raise RuntimeError("코인 실험 일부 실패 — " + " / ".join(errors))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    if sys.argv[1] == "sheet":  # 수동 전송: python coin_exp.py sheet
+        push_sheet()
+    else:
+        main(sys.argv[1])
