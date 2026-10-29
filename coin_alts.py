@@ -194,12 +194,36 @@ def place_order(coin: str, side: str, qty: float | None = None, quote_amount: fl
     return _coinone_order(coin, side, qty, quote_amount)
 
 
+# ── 같은 거래소 BTC (2026-10-30: 알트 신규 매수 중단, 알트를 판 현금은 그 거래소의 BTC 추세신호로 운용) ──
+
+def venue_btc(coin: str) -> tuple[float, float]:
+    """(그 알트 거래소의 BTC 수량, BTC 현재가[USDT 또는 원화]). 코인원은 실험 봇(coin_exp) 장부의 BTC 를 뺀다."""
+    if not has_keys(coin):
+        return 0.0, 0.0
+    if coin == "ZEC":
+        qty, _ = _binance_balance("BTC")
+        return qty, float(requests.get("https://api.binance.com/api/v3/ticker/price",
+                                       params={"symbol": "BTCUSDT"}, timeout=10).json()["price"])
+    qty, _ = _coinone_balance("BTC")
+    qty = max(0.0, qty - _exp_ledgers().get("BTC", {}).get("qty", 0.0))
+    return qty, float(requests.get("https://api.coinone.co.kr/public/v2/ticker_new/KRW/BTC",
+                                   timeout=10).json()["tickers"][0]["last"])
+
+
+def place_btc_order(coin: str, side: str, qty: float | None = None, quote_amount: float | None = None) -> dict:
+    """알트 coin 이 있는 거래소에서 BTC 시장가 주문."""
+    if coin == "ZEC":
+        return _binance_order("BTC", side, qty, quote_amount)
+    return _coinone_order("BTC", side, qty, quote_amount)
+
+
 def values_krw(usdkrw: float) -> dict:
-    """알트별 예산(코인 평가액 + 그 거래소 대기 현금)의 원화 환산."""
+    """알트별 예산(알트 평가액 + 같은 거래소 BTC 평가액 + 그 거래소 대기 현금)의 원화 환산."""
     out = {}
     for coin, cfg in ALTS.items():
         qty, cash = balance(coin)
-        value = qty * price(coin) + cash
+        bq, bpx = venue_btc(coin)
+        value = qty * price(coin) + bq * bpx + cash
         out[coin] = value * usdkrw if cfg["quote"] == "USDT" else value
     exp = _exp_ledgers()
     if exp:  # 코인 실험 봇(코인원) 장부 평가액도 코인 슬리브에 포함

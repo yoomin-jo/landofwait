@@ -3,7 +3,8 @@
 차이가 버퍼(기본비중의 10%)를 넘을 때만 매매한다. 매도 먼저, 그다음 원화 한도 내 매수.
 
 업비트 계좌 전체(원화 + BTC + ETH)를 코인 슬리브 예산으로 본다 — 슬리브 간 자금 이동은 수동.
-알트(ZEC 바이낸스, HYPE 코인원)는 같은 신호로 각 거래소 잔고 안에서 자동 리밸런싱(coin_alts.py).
+업비트는 BTC 100%(2026-10-30, ETH 0%). 알트(ZEC 바이낸스, HYPE 코인원)는 신규 매수 중단 — 보유분만 추세신호대로 줄이고,
+그 거래소의 남는 현금은 같은 거래소 BTC 를 같은 BTC 신호로 운용(coin_alts.py, run_alts).
 API 키가 없는 거래소는 알림만.
 COIN_LIVE=1 이 아니면 모의 실행(주문 안 내고 텔레그램으로 예정 주문만 알림).
 """
@@ -80,13 +81,16 @@ def compute_orders(balances: dict, prices: dict, weights: dict) -> tuple[list[di
     return orders, total
 
 
-def run_alts(state: dict) -> None:
-    """ZEC(바이낸스)·HYPE(코인원) — 각 거래소 잔고(코인 + 대기 현금) 안에서 권장 보유비율 min(1, 예측값/10)로
-    리밸런싱(버퍼 10%). API 키가 없는 거래소는 권장 비율이 직전 대비 10%p 이상 바뀔 때 알림만 보낸다."""
+def run_alts(state: dict, btc_forecast: float | None) -> None:
+    """ZEC(바이낸스)·HYPE(코인원) — 2026-10-30 부터 알트 신규 매수 중단(백테스트: 2022 이후 알트 추세·모멘텀 전략 전부
+    검증 CAGR 마이너스). 알트는 보유분만 추세신호대로 줄이고(목표 = min(현재 비중, min(1, 예측값/10)), 버퍼 10%),
+    그 거래소의 나머지 예산(대기 현금)은 같은 거래소 BTC 를 업비트와 같은 BTC 신호로 운용(목표 = min(min(1, BTC 예측/10), 1 − 알트 목표)).
+    매도 먼저, 그다음 매수. API 키가 없는 거래소는 알트 권장 비율이 직전 대비 10%p 이상 바뀔 때 알림만 보낸다."""
     forecasts = coin_alts.compute_forecasts()
     state["alt_forecasts"] = forecasts
     last = state.setdefault("alt_exposure", {})
     tag = "" if LIVE else "[모의] "
+    btc_exp = min(1.0, btc_forecast / 10) if btc_forecast is not None else None
     for coin, cfg in coin_alts.ALTS.items():
         exposure = min(1.0, forecasts[coin] / 10)
         qty, cash = coin_alts.balance(coin)
@@ -99,32 +103,55 @@ def run_alts(state: dict) -> None:
                 last[coin] = exposure
             continue
 
-        px = coin_alts.price(coin)
-        total = qty * px + cash
-        current = qty * px / total if total > 0 else 0.0
-        diff = (exposure - current) * total
-        last[coin] = exposure
-        if abs(exposure - current) < BUFFER or abs(diff) < cfg["min_order"]:
-            continue
         q = cfg["quote"]
-        notify(f"{tag}[코인 알트] {coin}({cfg['venue']}) 예측 {forecasts[coin]:.1f} → 목표 {exposure:.0%} "
-               f"(현재 {current:.0%}, 예산 {total:,.2f} {q})")
         try:
-            if diff < 0:
+            px = coin_alts.price(coin)
+            bq, bpx = coin_alts.venue_btc(coin)
+            total = qty * px + bq * bpx + cash
+            if total <= 0:
+                continue
+            current = qty * px / total
+            target = min(current, exposure)          # 알트는 늘리지 않음
+            last[coin] = target
+            diff = (target - current) * total
+            if current - target >= BUFFER and -diff >= cfg["min_order"]:
                 sell_qty = qty if exposure == 0 else min(qty, -diff / px)
+                notify(f"{tag}[코인 알트] {coin}({cfg['venue']}) 예측 {forecasts[coin]:.1f} → 목표 {target:.0%} "
+                       f"(현재 {current:.0%}, 예산 {total:,.2f} {q}, 신규 매수 없음)")
                 if LIVE:
                     coin_alts.place_order(coin, "sell", qty=sell_qty)
+                    time.sleep(3)
                 notify(f"{tag}sell {coin} {sell_qty:.4f} (약 {sell_qty * px:,.2f} {q}) @ 시장가")
+                if LIVE:
+                    qty, cash = coin_alts.balance(coin)
+                else:
+                    qty, cash = qty - sell_qty, cash + sell_qty * px
+                current = qty * px / total
+                target = current
+            if btc_exp is None:
+                continue
+            btc_cur = bq * bpx / total
+            btc_tgt = min(btc_exp, max(0.0, 1 - target))
+            bdiff = (btc_tgt - btc_cur) * total
+            if abs(btc_tgt - btc_cur) < BUFFER or abs(bdiff) < cfg["min_order"]:
+                continue
+            notify(f"{tag}[코인 BTC@{cfg['venue']}] BTC 예측 {btc_forecast:.1f} → 목표 {btc_tgt:.0%} "
+                   f"(현재 {btc_cur:.0%}, {coin} 거래소 예산 {total:,.2f} {q})")
+            if bdiff < 0:
+                sell_qty = bq if btc_tgt == 0 else min(bq, -bdiff / bpx)
+                if LIVE:
+                    coin_alts.place_btc_order(coin, "sell", qty=sell_qty)
+                notify(f"{tag}sell BTC@{cfg['venue']} {sell_qty:.6f} (약 {sell_qty * bpx:,.2f} {q}) @ 시장가")
             else:
-                amount = min(diff, cash * FEE_BUFFER)
+                amount = min(bdiff, cash * FEE_BUFFER)
                 if amount < cfg["min_order"]:
                     continue
                 if LIVE:
-                    coin_alts.place_order(coin, "buy", quote_amount=amount)
-                notify(f"{tag}buy {coin} {amount:,.2f} {q} @ 시장가")
+                    coin_alts.place_btc_order(coin, "buy", quote_amount=amount)
+                notify(f"{tag}buy BTC@{cfg['venue']} {amount:,.2f} {q} @ 시장가")
         except Exception as e:
-            logger.exception("알트 주문 실패: %s", coin)
-            notify(f"[코인 알트] {coin} 주문 실패: {e}")
+            logger.exception("알트 거래소 주문 실패: %s", coin)
+            notify(f"[코인 알트] {coin}({cfg['venue']}) 주문 실패: {e}")
 
 
 def run() -> None:
@@ -138,16 +165,24 @@ def run() -> None:
         return
 
     try:
-        run_alts(state)
+        weights, forecasts = compute_target_weights()
+    except Exception as e:
+        weights, forecasts = None, {}
+        notify(f"[코인] 신호 계산 실패 — 업비트 매매 중단, 알트 거래소 BTC 매매 생략: {e}")
+
+    try:
+        run_alts(state, forecasts.get("KRW-BTC"))
     except Exception as e:
         notify(f"[코인 알트] 신호/잔고 조회 실패: {e}")
 
+    if weights is None:
+        _save_state(state)
+        return
     try:
-        weights, forecasts = compute_target_weights()
         balances = get_balances()
         prices = get_prices(list(MARKETS))
     except Exception as e:
-        notify(f"[코인] 신호/잔고 조회 실패 — 매매 중단: {e}")
+        notify(f"[코인] 잔고 조회 실패 — 매매 중단: {e}")
         return
 
     orders, total = compute_orders(balances, prices, weights)

@@ -167,7 +167,7 @@ def cmd_status_coin() -> str:
     lines.append("[알트]")
     for coin, cfg in coin_alts.ALTS.items():
         fc = alt_fc.get(coin)
-        rec = f" 권장보유 {min(1.0, fc / 10):.0%} (예측 {fc:.1f})" if fc is not None else ""
+        rec = f" 보유 상한 {min(1.0, fc / 10):.0%} (예측 {fc:.1f}, 신규 매수 없음, 남는 현금은 그 거래소 BTC)" if fc is not None else ""
         how = "자동" if coin_alts.has_keys(coin) else "알림만"
         lines.append(f"  {coin}({cfg['venue']}, {how}): ₩{alt_values[coin]:,.0f}{rec}")
     import coin_exp
