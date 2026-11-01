@@ -123,14 +123,16 @@ def get_us_balance(token: KisToken) -> dict:
         raise RuntimeError(f"해외주식 잔고 조회 실패: {data.get('msg1', data)}")
 
     qty: dict[str, int] = {}
+    exchange: dict[str, str] = {}
     eval_amt_usd = 0.0
     for item in data.get("output1", []):
         q = int(item.get("ovrs_cblc_qty", 0) or 0)
         if q > 0:
             qty[item["ovrs_pdno"]] = q
+            exchange[item["ovrs_pdno"]] = item.get("ovrs_excg_cd", "NASD")
             eval_amt_usd += float(item.get("ovrs_stck_evlu_amt", 0) or 0)
 
-    return {"equity_usd": usd_cash + eval_amt_usd, "cash_usd": usd_cash, "qty": qty}
+    return {"equity_usd": usd_cash + eval_amt_usd, "cash_usd": usd_cash, "qty": qty, "exchange": exchange}
 
 
 def get_current_price(token: KisToken, isu_no: str, ord_mkt_code: str) -> float:

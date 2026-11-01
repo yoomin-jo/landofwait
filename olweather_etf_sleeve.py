@@ -1,8 +1,8 @@
-"""올웨더 슬리브의 채권/금 ETF 3종 — Carver식 연속 추세신호 월말체크 목표비중 계산 (DESIGN.md Sleeve 1).
-ISA 계좌에 이 3개 ETF를 전용으로 담는다(소형성장주 KR/US는 소형주퀀트 계좌 소관, 별도 파이프라인).
+"""올웨더 슬리브 ETF 5종 — 주식 2종 고정비중 + 채권/금 3종 Carver식 연속 추세신호, 월말체크 목표비중 계산
+(DESIGN.md Sleeve 1). 2026-11 소형주퀀트를 중단하고 주식을 지수 ETF로 바꿔 올웨더 슬리브 전체를 ISA에 담는다.
 
-비중 기준: 전체 포트폴리오 절대비중(국고채30 15%, 미국채30 15%, 금현물 20% — 합 50%가 ISA 몫)을
-ISA 계좌 총평가액 대비 상대비중으로 환산: 15/50=30%, 15/50=30%, 20/50=40%.
+비중 기준: ISA 계좌 총평가액 대비 — KOSPI200 25%, S&P500 25%(신호 없이 그냥 보유), 국고채30 15%,
+미국채30 15%, 금현물 20%. 주식은 백테스트(2007~2026)에서 Carver·60일선·200일선 모두 그냥 보유보다 못해 신호 미적용.
 
 신호(2026-10-05, 60SMA ON/OFF에서 교체): EWMAC 16/64·32/128·64/256 동일가중 결합 예측값(-20~+20)을
 롱 전용으로 0 미만은 0 처리, 목표비중 = 기본비중 × min(1, 예측값/10). 상수는 전부 pysystemtrade 기본값·
@@ -18,8 +18,9 @@ from __future__ import annotations
 import pandas as pd
 import yfinance as yf
 
-TICKERS = {"439870": "국고채30", "476760": "미국채30", "411060": "금현물"}
-WEIGHT_IN_ISA = {"439870": 15 / 50, "476760": 15 / 50, "411060": 20 / 50}
+TICKERS = {"294400": "KIWOOM200TR", "360750": "TIGER S&P500", "439870": "국고채30", "476760": "미국채30", "411060": "금현물"}
+WEIGHT_IN_ISA = {"294400": 0.25, "360750": 0.25, "439870": 0.15, "476760": 0.15, "411060": 0.20}
+TREND_TICKERS = ("439870", "476760", "411060")  # Carver 신호 적용 대상 — 나머지(주식)는 고정비중
 RULES = [(16, 64, 3.75), (32, 128, 2.65), (64, 256, 1.87)]  # (fast, slow, forecast scalar)
 FDM = 1.08
 FORECAST_CAP = 20.0
@@ -45,7 +46,7 @@ def compute_forecasts(as_of: str | None = None) -> dict:
     start = end - pd.DateOffset(years=6)
 
     forecasts = {}
-    for ticker in TICKERS:
+    for ticker in TREND_TICKERS:
         df = yf.download(f"{ticker}.KS", start=start.strftime("%Y-%m-%d"), end=(end + pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
                           auto_adjust=True, progress=False)
         close = df["Close"][f"{ticker}.KS"] if isinstance(df.columns, pd.MultiIndex) else df["Close"]
@@ -57,9 +58,9 @@ def compute_forecasts(as_of: str | None = None) -> dict:
 
 
 def compute_target_weights(as_of: str | None = None) -> dict:
-    """반환: {ticker: weight_in_isa} — 3개 자산 전부 포함. 예측값 0이면 비중 0(현금, RP 수동전환 대상)."""
+    """반환: {ticker: weight_in_isa} — 5개 자산 전부 포함. 주식은 고정비중, 채권/금은 예측값 0이면 비중 0(현금, RP 수동전환 대상)."""
     forecasts = compute_forecasts(as_of)
-    return {t: WEIGHT_IN_ISA[t] * min(1.0, forecasts[t] / 10) for t in TICKERS}
+    return {t: WEIGHT_IN_ISA[t] * min(1.0, forecasts[t] / 10) if t in forecasts else WEIGHT_IN_ISA[t] for t in TICKERS}
 
 
 if __name__ == "__main__":
