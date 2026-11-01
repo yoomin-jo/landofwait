@@ -144,32 +144,31 @@ def cmd_status_band() -> str:
 
 
 def cmd_status_coin() -> str:
-    from coin_sleeve import MARKETS
-    import upbit_api
+    # 2026-11-01: 업비트 전액 코인원 이체 → 거래소별(코인원·바이낸스) 예산 = BTC + 알트(줄이기만) + 대기 현금
+    import coin_alts
 
     state = json.loads(COIN_STATE_PATH.read_text(encoding="utf-8")) if COIN_STATE_PATH.exists() else {}
-    balances = upbit_api.get_balances()
-    prices = upbit_api.get_prices(list(MARKETS))
-    values = {m: balances.get(c, 0.0) * prices[m] for m, c in MARKETS.items()}
-    total = balances.get("KRW", 0.0) + sum(values.values())
     mode = "실거래" if state.get("live") else "모의"
-    lines = [f"[코인 슬리브 (업비트, {mode})]", f"총액: ₩{total:,.0f} (원화 ₩{balances.get('KRW', 0.0):,.0f})",
-             f"마지막 실행: {state.get('last_run_date', '-')}"]
-    for m, c in MARKETS.items():
-        fc = state.get("forecasts", {}).get(m)
-        tgt = state.get("target_weights", {}).get(m, 0.0)
-        cur = values[m] / total if total > 0 else 0.0
-        lines.append(f"  {c}: ₩{values[m]:,.0f} {cur:.0%}  목표{tgt:.0%}" + (f" (예측 {fc:.1f})" if fc is not None else ""))
-
-    import coin_alts
-    alt_values = coin_alts.values_krw(sleeve_monitor.get_usdkrw())
+    fc = state.get("forecasts", {}).get("KRW-BTC")
+    tgt = state.get("target_weights", {}).get("KRW-BTC", 0.0)
+    lines = [f"[코인 슬리브 ({mode})] 마지막 실행: {state.get('last_run_date', '-')}",
+             f"BTC 예측 {fc:.1f} → 목표 {tgt:.0%} (거래소 예산 기준)" if fc is not None else "BTC 예측: -"]
+    fx = sleeve_monitor.get_usdkrw()
     alt_fc = state.get("alt_forecasts", {})
-    lines.append("[알트]")
     for coin, cfg in coin_alts.ALTS.items():
-        fc = alt_fc.get(coin)
-        rec = f" 보유 상한 {min(1.0, fc / 10):.0%} (예측 {fc:.1f}, 신규 매수 없음, 남는 현금은 그 거래소 BTC)" if fc is not None else ""
-        how = "자동" if coin_alts.has_keys(coin) else "알림만"
-        lines.append(f"  {coin}({cfg['venue']}, {how}): ₩{alt_values[coin]:,.0f}{rec}")
+        afc = alt_fc.get(coin)
+        cap = f", 보유 상한 {min(1.0, afc / 10):.0%}" if afc is not None else ""
+        qty, cash = coin_alts.balance(coin)
+        if not coin_alts.has_keys(coin):
+            lines.append(f"  {cfg['venue']}(알림만): {coin} {qty:g}개{cap}")
+            continue
+        bq, bpx = coin_alts.venue_btc(coin)
+        alt_v, btc_v = qty * coin_alts.price(coin), bq * bpx
+        total = alt_v + btc_v + cash
+        k = fx if cfg["quote"] == "USDT" else 1.0
+        pct = (lambda v: v / total) if total > 0 else (lambda v: 0.0)
+        lines.append(f"  {cfg['venue']}: ₩{total * k:,.0f} — BTC {pct(btc_v):.0%} · {coin} {pct(alt_v):.0%}"
+                     f"(신규 매수 없음{cap}) · 현금 {pct(cash):.0%}")
     import coin_exp
     lines.append(coin_exp.summary())
     return "\n".join(lines)

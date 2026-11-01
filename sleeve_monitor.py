@@ -21,8 +21,6 @@ from pandas.tseries.offsets import BMonthEnd
 import coin_alts
 import kis_domestic
 import kis_overseas
-import upbit_api
-from coin_sleeve import MARKETS
 
 load_dotenv()
 
@@ -73,11 +71,9 @@ def compute_sleeve_totals() -> dict:
     olweather_krw = isa_total_krw + quant_total_krw
     combined = olweather_krw + haa_krw
 
-    # 코인 슬리브: 업비트(BTC·ETH·원화) + 알트(ZEC 바이낸스, HYPE 코인원 — .env 수량 × 공개 시세)
-    balances = upbit_api.get_balances()
-    prices = upbit_api.get_prices(list(MARKETS))
-    upbit_krw = balances.get("KRW", 0.0) + sum(balances.get(c, 0.0) * prices[m] for m, c in MARKETS.items())
-    coin_krw = upbit_krw + sum(coin_alts.values_krw(fx).values())
+    # 코인 슬리브: 거래소별 예산(코인원 원화·BTC·HYPE + 실험 봇 장부, 바이낸스 USDT·BTC·ZEC)
+    # 2026-11-01 업비트 전액 코인원 이체 → 업비트 제외
+    coin_krw = sum(coin_alts.values_krw(fx).values())
     grand = combined + coin_krw
 
     return {

@@ -1,11 +1,11 @@
-"""코인 슬리브 일간 리밸런싱 자동매매 (DESIGN.md Sleeve 3, 업비트 BTC·ETH 추세신호).
+"""코인 슬리브 일간 리밸런싱 자동매매 (DESIGN.md Sleeve 3, BTC 추세신호).
 매일 07:00 KST(미국장 마감 후 — 성과 기록 07:00과 같은 기준) 트리거. 마지막 완료 일봉(전날 09:00 마감)으로 신호를 계산하고, 목표와 현재 비중
-차이가 버퍼(기본비중의 10%)를 넘을 때만 매매한다. 매도 먼저, 그다음 원화 한도 내 매수.
+차이가 버퍼(10%)를 넘을 때만 매매한다. 매도 먼저, 그다음 대기 현금 한도 내 매수.
 
-업비트 계좌 전체(원화 + BTC + ETH)를 코인 슬리브 예산으로 본다 — 슬리브 간 자금 이동은 수동.
-업비트는 BTC 100%(2026-10-30, ETH 0%). 알트(ZEC 바이낸스, HYPE 코인원)는 신규 매수 중단 — 보유분만 추세신호대로 줄이고,
-그 거래소의 남는 현금은 같은 거래소 BTC 를 같은 BTC 신호로 운용(coin_alts.py, run_alts).
-API 키가 없는 거래소는 알림만.
+2026-11-01: 업비트 전액을 코인원으로 이체 → 업비트 매매 갈래 제거, BTC 는 코인원(API 수수료 0원)에서 운용.
+거래소 계좌 전체(코인원: 원화 + BTC + HYPE, 실험 봇 장부 몫 제외 / 바이낸스: USDT + BTC + ZEC)를 그 거래소의 예산으로 본다.
+알트(HYPE·ZEC)는 신규 매수 중단(2026-10-30) — 보유분만 추세신호대로 줄이고, 나머지 예산은 BTC 신호로 BTC 운용.
+신호 데이터는 업비트 KRW-BTC 일봉(공개 시세, 2018~ 이력). 슬리브 간 자금 이동은 수동. API 키가 없는 거래소는 알림만.
 COIN_LIVE=1 이 아니면 모의 실행(주문 안 내고 텔레그램으로 예정 주문만 알림).
 """
 import json
@@ -20,8 +20,7 @@ from dotenv import load_dotenv
 
 import coin_alts
 import pause
-from coin_sleeve import BASE_WEIGHT, BUFFER, MARKETS, compute_target_weights
-from upbit_api import MIN_ORDER_KRW, buy_market_krw, get_balances, get_prices, sell_market_volume
+from coin_sleeve import BUFFER, compute_target_weights
 
 load_dotenv()
 
@@ -29,7 +28,7 @@ STATE_PATH = Path(__file__).parent / "data" / "coin_state.json"
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 LIVE = os.environ.get("COIN_LIVE") == "1"
-FEE_BUFFER = 0.995  # 매수 시 수수료(0.05%)·호가 여유
+FEE_BUFFER = 0.995  # 매수 시 시장가 호가 여유(코인원 API 수수료 0원, 바이낸스 0.1%)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -60,32 +59,13 @@ def _save_state(state: dict) -> None:
     STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def compute_orders(balances: dict, prices: dict, weights: dict) -> tuple[list[dict], float]:
-    """반환: (주문 목록, 슬리브 총액 원화). 주문: {"market", "side", "krw", "volume"}."""
-    total = balances.get("KRW", 0.0) + sum(balances.get(MARKETS[m], 0.0) * prices[m] for m in MARKETS)
-    orders = []
-    for m, coin in MARKETS.items():
-        qty = balances.get(coin, 0.0)
-        current_w = qty * prices[m] / total if total > 0 else 0.0
-        target_w = weights[m]
-        if abs(target_w - current_w) < BUFFER * BASE_WEIGHT[m]:
-            continue
-        diff_krw = (target_w - current_w) * total
-        if abs(diff_krw) < MIN_ORDER_KRW:
-            continue
-        if diff_krw < 0:
-            volume = qty if target_w == 0 else min(qty, -diff_krw / prices[m])
-            orders.append({"market": m, "side": "sell", "krw": volume * prices[m], "volume": volume})
-        else:
-            orders.append({"market": m, "side": "buy", "krw": diff_krw, "volume": diff_krw / prices[m]})
-    return orders, total
-
-
-def run_alts(state: dict, btc_forecast: float | None) -> None:
-    """ZEC(바이낸스)·HYPE(코인원) — 2026-10-30 부터 알트 신규 매수 중단(백테스트: 2022 이후 알트 추세·모멘텀 전략 전부
+def run_alts(state: dict, btc_forecast: float | None) -> bool:
+    """거래소별(코인원 HYPE, 바이낸스 ZEC) — 2026-10-30 부터 알트 신규 매수 중단(백테스트: 2022 이후 알트 추세·모멘텀 전략 전부
     검증 CAGR 마이너스). 알트는 보유분만 추세신호대로 줄이고(목표 = min(현재 비중, min(1, 예측값/10)), 버퍼 10%),
-    그 거래소의 나머지 예산(대기 현금)은 같은 거래소 BTC 를 업비트와 같은 BTC 신호로 운용(목표 = min(min(1, BTC 예측/10), 1 − 알트 목표)).
-    매도 먼저, 그다음 매수. API 키가 없는 거래소는 알트 권장 비율이 직전 대비 10%p 이상 바뀔 때 알림만 보낸다."""
+    그 거래소의 나머지 예산(대기 현금)은 BTC 신호로 BTC 운용(목표 = min(min(1, BTC 예측/10), 1 − 알트 목표)).
+    매도 먼저, 그다음 매수. API 키가 없는 거래소는 알트 권장 비율이 직전 대비 10%p 이상 바뀔 때 알림만 보낸다.
+    반환: 주문 실패가 있었는지(있으면 같은 날 /run_coin 재실행 가능하게)."""
+    failed = False
     forecasts = coin_alts.compute_forecasts()
     state["alt_forecasts"] = forecasts
     last = state.setdefault("alt_exposure", {})
@@ -136,7 +116,7 @@ def run_alts(state: dict, btc_forecast: float | None) -> None:
             if abs(btc_tgt - btc_cur) < BUFFER or abs(bdiff) < cfg["min_order"]:
                 continue
             notify(f"{tag}[코인 BTC@{cfg['venue']}] BTC 예측 {btc_forecast:.1f} → 목표 {btc_tgt:.0%} "
-                   f"(현재 {btc_cur:.0%}, {coin} 거래소 예산 {total:,.2f} {q})")
+                   f"(현재 {btc_cur:.0%}, {cfg['venue']} 예산 {total:,.2f} {q})")
             if bdiff < 0:
                 sell_qty = bq if btc_tgt == 0 else min(bq, -bdiff / bpx)
                 if LIVE:
@@ -152,6 +132,8 @@ def run_alts(state: dict, btc_forecast: float | None) -> None:
         except Exception as e:
             logger.exception("알트 거래소 주문 실패: %s", coin)
             notify(f"[코인 알트] {coin}({cfg['venue']}) 주문 실패: {e}")
+            failed = True
+    return failed
 
 
 def run() -> None:
@@ -167,75 +149,23 @@ def run() -> None:
     try:
         weights, forecasts = compute_target_weights()
     except Exception as e:
+        notify(f"[코인] BTC 신호 계산 실패 — BTC 매매 생략(알트 줄이기만 진행): {e}")
         weights, forecasts = None, {}
-        notify(f"[코인] 신호 계산 실패 — 업비트 매매 중단, 알트 거래소 BTC 매매 생략: {e}")
 
     try:
-        run_alts(state, forecasts.get("KRW-BTC"))
+        has_failure = run_alts(state, forecasts.get("KRW-BTC"))
     except Exception as e:
-        notify(f"[코인 알트] 신호/잔고 조회 실패: {e}")
+        notify(f"[코인] 신호/잔고 조회 실패: {e}")
+        has_failure = True
 
-    if weights is None:
-        _save_state(state)
-        return
-    try:
-        balances = get_balances()
-        prices = get_prices(list(MARKETS))
-    except Exception as e:
-        notify(f"[코인] 잔고 조회 실패 — 매매 중단: {e}")
-        return
-
-    orders, total = compute_orders(balances, prices, weights)
-    summary = ", ".join(f"{MARKETS[m]} 예측 {forecasts[m]:.1f}→목표 {weights[m]:.0%}" for m in MARKETS)
-    state.update({"last_run_date": today, "forecasts": forecasts, "target_weights": weights,
-                  "total_krw": round(total), "live": LIVE})
-
-    if not orders:
-        logger.info("매매 불필요 (%s, 총액 ₩%s)", summary, f"{total:,.0f}")
-        _save_state(state)
-        return
-
-    tag = "" if LIVE else "[모의] "
-    notify(f"{tag}[코인 리밸런싱] 총액 ₩{total:,.0f} / {summary}")
-    has_failure = False
-    for o in [o for o in orders if o["side"] == "sell"]:
-        try:
-            if LIVE:
-                sell_market_volume(o["market"], o["volume"])
-            notify(f"{tag}sell {MARKETS[o['market']]} {o['volume']:.6f} (약 ₩{o['krw']:,.0f}) @ 시장가")
-        except Exception as e:
-            logger.exception("매도 실패: %s", o)
-            notify(f"[코인] 매도 실패: {MARKETS[o['market']]} — {e}")
-            has_failure = True
-
-    buys = [o for o in orders if o["side"] == "buy"]
-    if buys and not has_failure:
-        if LIVE:
-            time.sleep(3)
-            try:
-                krw = get_balances().get("KRW", 0.0) * FEE_BUFFER
-            except Exception as e:
-                notify(f"[코인] 매수 전 원화 조회 실패 — 매수 중단: {e}")
-                buys, has_failure = [], True
-        else:
-            krw = (balances.get("KRW", 0.0) + sum(o["krw"] for o in orders if o["side"] == "sell")) * FEE_BUFFER
-        for o in buys:
-            amount = min(o["krw"], krw)
-            if amount < MIN_ORDER_KRW:
-                continue
-            try:
-                if LIVE:
-                    buy_market_krw(o["market"], amount)
-                krw -= amount
-                notify(f"{tag}buy {MARKETS[o['market']]} ₩{amount:,.0f} @ 시장가")
-            except Exception as e:
-                logger.exception("매수 실패: %s", o)
-                notify(f"[코인] 매수 실패: {MARKETS[o['market']]} — {e}")
-                has_failure = True
-
-    if has_failure:
-        state.pop("last_run_date")  # 같은 날 /run_coin 재실행 가능하게
-        notify("[코인] 일부 주문 실패 — /run_coin 재실행 또는 내일 07:00 자동 재시도")
+    if weights is not None:
+        state.update({"forecasts": forecasts, "target_weights": weights})
+    state["live"] = LIVE
+    if weights is not None and not has_failure:
+        state["last_run_date"] = today
+    else:
+        state.pop("last_run_date", None)  # 같은 날 /run_coin 재실행 가능하게
+        notify("[코인] 신호 계산 또는 주문 실패 — /run_coin 재실행 또는 내일 07:00 자동 재시도")
     _save_state(state)
 
 
