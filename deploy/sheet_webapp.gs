@@ -16,6 +16,7 @@ function doPost(e) {
   writeTable_(ss, '월별', data.monthly, '0.0%');
   writeTable_(ss, '기록', data.history, '#,##0');
   writeTable_(ss, '자금이동', data.flows, '#,##0');
+  if (data.haa) writeTable_(ss, 'HAA', data.haa, '0.00%');
   const s = ss.getSheetByName('요약');
   s.getRange(data.summary.length + 2, 1).setValue('마지막 갱신: ' + data.updated_at);
   formatSummary_(s, data.summary.length);

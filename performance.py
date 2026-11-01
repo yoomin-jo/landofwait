@@ -115,6 +115,31 @@ def report(month: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def haa_table() -> list[list]:
+    """시트 'HAA' 탭 — 봇과 같은 계산(haa_sleeve, 분배금 반영 가격, 직전 월말 기준) 결과.
+    GOOGLEFINANCE는 미조정 가격만 줘서 TIP 같은 채권 ETF 모멘텀이 비관적으로 나와 신호가 봇과 어긋났음(2026-11-01)."""
+    import haa_sleeve
+    try:
+        result = haa_sleeve.compute_target_weights()
+        _, mom = haa_sleeve._compute_momentum_row(None)
+    except Exception as e:
+        return [["HAA 계산 실패"], [str(e)[:200]]]
+    rank = mom[haa_sleeve.ATTACK].rank(ascending=False).astype(int)
+    weights = result["weights"]
+    rows = [["티커", "구분", "모멘텀(13612U)", "공격 순위", "Top4", "목표비중"]]
+    for t in mom[haa_sleeve.ATTACK].sort_values(ascending=False).index:
+        rows.append([t, "공격", float(mom[t]), str(rank[t]), "O" if rank[t] <= 4 else "", float(weights.get(t, 0.0))])
+    for t in haa_sleeve.DEFENSIVE:
+        if t not in haa_sleeve.ATTACK:
+            rows.append([t, "방어", float(mom[t]), "", "", float(weights.get(t, 0.0))])
+    rows.append([haa_sleeve.CANARY, "카나리아", float(mom[haa_sleeve.CANARY]), "", "", 0.0])
+    rows.append(["", "", "", "", "", ""])
+    rows.append(["신호", result["mode"], "", "", "", ""])
+    rows.append(["기준 월말", result["as_of_month_end"], "", "", "", ""])
+    rows.append(["가격 기준", "분배금 반영(논문 총수익률) — 봇 매매와 동일", "", "", "", ""])
+    return rows
+
+
 def push_sheet() -> None:
     """구글시트 '자산배분 성과'로 전체 성과표 전송(시트의 Apps Script 웹 앱 doPost — deploy/sheet_webapp.gs).
     매번 전체를 다시 쓰므로 한 번 실패해도 다음 전송에서 복구된다. SHEET_WEBAPP_URL이 없으면 건너뜀."""
@@ -156,7 +181,7 @@ def push_sheet() -> None:
             flows.append([str(r["datetime"]), SLEEVES.get(r["sleeve"], r["sleeve"]), int(r["amount"]), str(r["note"])])
 
     payload = {"token": os.environ["SHEET_TOKEN"], "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-               "summary": summary, "monthly": monthly, "history": history, "flows": flows}
+               "summary": summary, "monthly": monthly, "history": history, "flows": flows, "haa": haa_table()}
     # 구글 쪽 일시 오류(2026-10-06 20:35 404 한 번 발생)는 재시도로 흡수 — 3번 모두 실패할 때만 예외
     for attempt in range(3):
         try:
