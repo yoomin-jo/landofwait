@@ -1,12 +1,12 @@
-"""올웨더 슬리브 ETF 5종 월간 리밸런싱 자동매매 (DESIGN.md Sleeve 1, 주식 2종 고정비중 + 채권/금 3종 Carver식 연속 추세신호).
+"""올웨더 슬리브 ETF 8종(K올웨더 성장형) 월간 리밸런싱 자동매매 (DESIGN.md Sleeve 1, 주식 4종·초단기채 고정비중 +
+금/채권 3종 Carver식 연속 추세신호, 신호 미보유분은 초단기채로).
 ISA 계좌 전용(2026-11 소형주퀀트 중단, 주식도 ISA의 지수 ETF로).
 
 평일 09:10 KST(정규장 중) 트리거되지만, 월초 매매창(이번 달 첫 5영업일) 안이고 이번 달 리밸런싱이
 아직 완료 안 됐을 때만 동작한다. 신호는 전월 말 종가 기준(월말 신호 → 익월 첫 거래일 매매, DESIGN.md
 확정 스펙). 주문 실패·RP 인출 필요·휴장 등으로 미완료면 다음 영업일 같은 시각에 자동 재시도.
 
-신호 미보유분 대기자금은 RP로 전환하는데, RP는 KIS Open API로 매수 불가(API 미지원 확인됨)라
-자동매매 대상에서 제외 — 그냥 현금으로 남겨두고 텔레그램으로 수동 RP 전환 알림만 보낸다.
+신호 미보유분 대기자금은 초단기채 ETF로 자동 매수(목표비중 합계 100%) — RP는 KIS Open API로 매수 불가라 쓰지 않는다.
 """
 import json
 import logging
@@ -187,10 +187,6 @@ def run() -> None:
         has_failure = True
         notify(f"예수금 부족 — RP에서 약 ₩{shortfall:,.0f} 인출(매도) 후 /run_olweather 또는 "
                f"다음 영업일 09:10 자동 재시도(월초 {REBALANCE_WINDOW_BDAYS}영업일 내)")
-
-    idle_ratio = 1.0 - sum(weights.values())
-    if idle_ratio > 0 and not has_failure:
-        notify(f"대기자금 목표 약 ₩{total * idle_ratio:,.0f} (RP 포함) — 예수금으로 남은 몫은 RP로 수동 전환하세요")
 
     if has_failure:
         notify(f"일부 주문 실패/미완료 — 다음 영업일 09:10 자동 재시도(월초 {REBALANCE_WINDOW_BDAYS}영업일 내)")
