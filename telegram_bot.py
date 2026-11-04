@@ -11,7 +11,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-from haa_sleeve import ALL_TICKERS as HAA_TICKERS, EXCHANGE as HAA_EXCHANGE
+from haa_sleeve import HOLD_TICKERS as HAA_TICKERS, EXCHANGE as HAA_EXCHANGE
 from kis_overseas import get_access_token, get_current_price, get_us_balance
 import kis_domestic
 from olweather_etf_sleeve import TICKERS as OLWEATHER_TICKERS

@@ -18,7 +18,11 @@ ALL_TICKERS = sorted(set(ATTACK + [CANARY] + DEFENSIVE))
 # KIS 거래소 코드 실측 확인 결과: iShares 발행(TLT/IEF)는 NASD, 나머지(State Street/Vanguard/
 # Invesco 발행)는 NYSE Arca 상장이라 KIS 분류상 AMEX. 단 PDBC는 나스닥 상장이라 NASD
 # (2026-10-05 KIS 시세조회 확인: AMEX는 빈 응답, NASD는 정상 — DBC→PDBC 교체 때 누락됐던 것).
-EXCHANGE = {t: ("NASD" if t in ("TLT", "IEF", "PDBC") else "AMEX") for t in ALL_TICKERS}
+# 매매 티커 대체: 신호는 원 티커로 계산하고 매매만 같은 지수의 저가 ETF로 한다.
+# SPY는 1주 $750대라 정수 내림 손실이 커서 2026-11 리밸런싱 후 현금 약 10%가 남음 → SPYM(구 SPLG, S&P500).
+TRADE_TICKER = {"SPY": "SPYM"}
+HOLD_TICKERS = sorted(set(ALL_TICKERS) | set(TRADE_TICKER.values()))
+EXCHANGE = {t: ("NASD" if t in ("TLT", "IEF", "PDBC") else "AMEX") for t in HOLD_TICKERS}
 
 
 def fetch_monthly_prices(as_of: str | None = None) -> pd.DataFrame:

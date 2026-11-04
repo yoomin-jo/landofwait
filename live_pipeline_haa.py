@@ -18,7 +18,7 @@ import requests
 from dotenv import load_dotenv
 
 import pause
-from haa_sleeve import ALL_TICKERS, EXCHANGE, compute_target_weights
+from haa_sleeve import ALL_TICKERS, EXCHANGE, TRADE_TICKER, compute_target_weights
 from kis_domestic import get_total_assets
 from kis_overseas import get_access_token, get_current_price, get_us_balance, place_us_order
 from sleeve_monitor import get_usdkrw
@@ -112,6 +112,27 @@ def compute_rebalance_orders(current_qty: dict, prices: dict, cash: float, weigh
             o["qty"] = int(available / buy_price)
         available -= o["qty"] * buy_price
 
+    # 정수 내림으로 남은 현금: 목표 대비 부족분이 반 주 이상인 종목부터 1주씩 추가 매수
+    final_qty = {t: current_qty.get(t, 0) for t in tickers}
+    for o in sells:
+        final_qty[o["ticker"]] -= o["qty"]
+    for o in buys:
+        final_qty[o["ticker"]] += o["qty"]
+    while True:
+        gaps = {t: total_value * w - final_qty.get(t, 0) * prices[t] for t, w in weights.items() if prices.get(t)}
+        cands = [t for t, g in gaps.items()
+                 if g >= prices[t] / 2 and prices[t] * (1 + LIMIT_BUFFER) <= available]
+        if not cands:
+            break
+        t = max(cands, key=lambda t: gaps[t] / prices[t])
+        order = next((o for o in buys if o["ticker"] == t), None)
+        if order is None:
+            order = {"ticker": t, "qty": 0, "price": prices[t], "side": "buy"}
+            buys.append(order)
+        order["qty"] += 1
+        final_qty[t] = final_qty.get(t, 0) + 1
+        available -= prices[t] * (1 + LIMIT_BUFFER)
+
     return sells + [o for o in buys if o["qty"] > 0]
 
 
@@ -133,7 +154,7 @@ def run() -> None:
 
     try:
         result = compute_target_weights(signal_as_of())
-        weights = result["weights"]
+        weights = {TRADE_TICKER.get(t, t): w for t, w in result["weights"].items()}
         mode = result["mode"]
     except Exception as e:
         notify(f"HAA 목표비중 계산 실패 — 리밸런싱 중단: {e}")
